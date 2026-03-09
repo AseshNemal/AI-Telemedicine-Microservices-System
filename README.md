@@ -2,6 +2,21 @@
 
 Cloud-native distributed microservices starter for telemedicine use cases (patient, doctor, admin) using Go, Gin, Docker, Docker Compose, Kubernetes manifests, and a Next.js frontend.
 
+## Prerequisites
+
+Install the following before running:
+
+- Docker Desktop (with Docker Compose v2)
+- Git
+- Node.js 22+ (only needed if running frontend without Docker)
+- Go 1.25+ (only needed if running services without Docker)
+
+## Quick Setup
+
+1. Ensure `.env` exists at project root (same level as `README.md`).
+2. Put your MongoDB Atlas connection string in `DATABASE_URL`.
+3. (Optional) Use `.env.example` as a reference template.
+
 ## Project Structure
 
 ```text
@@ -70,19 +85,77 @@ Required:
 - `NEXT_PUBLIC_DOCTOR_SERVICE_URL`
 - `NEXT_PUBLIC_APPOINTMENT_SERVICE_URL`
 
-## Local Run (Docker Compose)
+## Local Run (Docker Compose) - macOS / Linux (zsh/bash)
 
-From `deployments/` directory:
+Run from the `deployments/` directory:
 
-1. Build and run all services:
-	- `docker compose up --build`
+1. Start all services:
+	 - `cd deployments`
+	 - `docker compose up --build`
 2. Open frontend:
-	- `http://localhost:3000`
-3. Check health endpoints:
-	- `http://localhost:8081/health`
-	- `http://localhost:8082/health`
-	- `http://localhost:8083/health`
-	- `http://localhost:8084/health`
+	 - `http://localhost:3000`
+3. Stop services:
+	 - `Ctrl + C`
+	 - `docker compose down`
+
+## Local Run (Docker Compose) - Windows (PowerShell)
+
+Run from the `deployments` folder:
+
+1. Start all services:
+	 - `Set-Location .\deployments`
+	 - `docker compose up --build`
+2. Open frontend:
+	 - `http://localhost:3000`
+3. Stop services:
+	 - `Ctrl + C`
+	 - `docker compose down`
+
+## Health Check (All Platforms)
+
+After startup, verify:
+
+- `http://localhost:8081/health`
+- `http://localhost:8082/health`
+- `http://localhost:8083/health`
+- `http://localhost:8084/health`
+
+## API Smoke Test (Sample Data)
+
+Register user:
+
+- Endpoint: `POST http://localhost:8081/register`
+- Sample payload:
+	- `{"name":"Alex","email":"alex@example.com","password":"123456","role":"Patient"}`
+
+Create appointment:
+
+- Endpoint: `POST http://localhost:8083/appointments`
+- Sample payload:
+	- `{"patientId":"patient-001","doctorId":"doc-1","date":"2026-03-10","time":"10:30"}`
+
+Expected behavior:
+
+- Appointment is created with status `BOOKED`
+- Notification service logs a simulated email event
+
+## Common Run Issues
+
+- Running `docker compose` from the wrong folder:
+	- Always run from `deployments/` where `docker-compose.yml` exists.
+- Port already in use:
+	- Stop conflicting process or change host port mapping in `deployments/docker-compose.yml`.
+- MongoDB connection errors:
+	- Re-check `DATABASE_URL` in root `.env`.
+- Stale containers/images:
+	- Run `docker compose down` then `docker compose up --build`.
+
+## Project Notes
+
+- Auth service is currently **mock-first** by design, so Firebase can be integrated in a later increment.
+- Appointment service triggers notification service after booking creation.
+- MongoDB Atlas is configured via `DATABASE_URL`.
+- Services are independently deployable and communicate via REST APIs.
 
 ## Kubernetes Starter Manifests
 
@@ -104,9 +177,8 @@ Apply with your cluster context:
 5. `kubectl apply -f deployments/kubernetes/appointment-deployment.yaml`
 6. `kubectl apply -f deployments/kubernetes/notification-deployment.yaml`
 
-## Notes
+## Security Reminder
 
-- Auth service is currently **mock-first** by design, so Firebase can be integrated in a later increment.
-- Appointment service triggers notification service after booking creation.
-- MongoDB Atlas is configured via `DATABASE_URL`.
+- Do not commit real secrets in `.env`.
+- If credentials were exposed during development, rotate them immediately.
 
