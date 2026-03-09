@@ -1,15 +1,29 @@
 package main
 
-import "github.com/gin-gonic/gin"
+import (
+	"doctor-service/database"
+	"doctor-service/handlers"
+	"doctor-service/routes"
+	"log"
+	"os"
+
+	"github.com/gin-gonic/gin"
+)
 
 func main() {
+	db := database.Connect()
+	h := handlers.NewHandler(db)
 
- router := gin.Default()
+	router := gin.Default()
+	routes.RegisterRoutes(router, h)
 
- router.GET("/doctors", func(c *gin.Context) {
-  doctors := []string{"Dr Silva", "Dr Fernando"}
-  c.JSON(200, doctors)
- })
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8082"
+	}
 
- router.Run(":8082")
+	log.Printf("doctor-service listening on :%s", port)
+	if err := router.Run(":" + port); err != nil {
+		log.Fatalf("failed to start doctor-service: %v", err)
+	}
 }

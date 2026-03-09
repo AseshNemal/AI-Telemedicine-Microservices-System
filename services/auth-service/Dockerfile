@@ -1,10 +1,12 @@
-FROM golang:latest
+FROM golang:1.25
 
 WORKDIR /app
 
 COPY . .
 
-RUN go build -o main
+RUN GOOS=linux GOARCH=amd64 go build -o main
+
+RUN chmod +x main
 
 EXPOSE 8081
 

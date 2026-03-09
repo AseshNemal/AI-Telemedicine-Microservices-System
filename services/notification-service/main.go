@@ -1,15 +1,26 @@
-package notificationservice
+package main
 
-import "github.com/gin-gonic/gin"
+import (
+	"log"
+	"notification-service/handlers"
+	"notification-service/routes"
+	"os"
+
+	"github.com/gin-gonic/gin"
+)
 
 func main() {
-
+	h := handlers.NewHandler()
 	router := gin.Default()
+	routes.RegisterRoutes(router, h)
 
-	router.GET("/notifications", func(c *gin.Context) {
-		notifications := []string{"Notification 1", "Notification 2"}
-		c.JSON(200, notifications)
-	})
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8084"
+	}
 
-	router.Run(":8084")
+	log.Printf("notification-service listening on :%s", port)
+	if err := router.Run(":" + port); err != nil {
+		log.Fatalf("failed to start notification-service: %v", err)
+	}
 }
