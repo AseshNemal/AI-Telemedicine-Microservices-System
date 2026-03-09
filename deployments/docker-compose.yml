@@ -1,0 +1,23 @@
+version: "3"
+
+services:
+
+  auth-service:
+    build: ../services/auth-service
+    ports:
+      - "8081:8081"
+
+  doctor-service:
+    build: ../services/doctor-service
+    ports:
+      - "8082:8082"
+
+  appointment-service:
+    build: ../services/appointment-service
+    ports:
+      - "8083:8083"
+
+  notification-service:
+    build: ../services/notification-service
+    ports:
+      - "8084:8084"
