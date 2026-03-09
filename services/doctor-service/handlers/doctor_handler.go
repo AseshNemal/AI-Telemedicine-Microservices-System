@@ -1,44 +1,49 @@
 package handlers
 
 import (
+	"context"
 	"doctor-service/database"
 	"doctor-service/models"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 type Handler struct {
-	db      *database.Client
-	mu      sync.RWMutex
-	doctors map[string]models.Doctor
+	db *database.Client
 }
 
 func NewHandler(db *database.Client) *Handler {
-	h := &Handler{db: db, doctors: make(map[string]models.Doctor)}
-	h.seed()
-	return h
-}
-
-func (h *Handler) seed() {
-	h.doctors["doc-1"] = models.Doctor{ID: "doc-1", Name: "Dr Silva", Specialty: "Cardiology", Hospital: "Central Hospital", Availability: []string{"Mon 09:00", "Wed 13:00"}}
-	h.doctors["doc-2"] = models.Doctor{ID: "doc-2", Name: "Dr Fernando", Specialty: "Dermatology", Hospital: "City Clinic", Availability: []string{"Tue 10:00", "Thu 15:00"}}
+	return &Handler{db: db}
 }
 
 func (h *Handler) GetDoctors(c *gin.Context) {
 	specialty := c.Query("specialty")
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	result := make([]models.Doctor, 0, len(h.doctors))
-	for _, doc := range h.doctors {
-		if specialty == "" || specialty == doc.Specialty {
-			result = append(result, doc)
-		}
+	// Require database; no in-memory fallback
+	if h.db == nil || !h.db.Connected || h.db.DB == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
+		return
 	}
-	c.JSON(http.StatusOK, result)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	filter := bson.D{}
+	if specialty != "" {
+		filter = bson.D{{Key: "specialty", Value: specialty}}
+	}
+	cursor, err := h.db.DB.Collection("doctors").Find(ctx, filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query doctors", "details": err.Error()})
+		return
+	}
+	var docs []models.Doctor
+	if err = cursor.All(ctx, &docs); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read doctors from cursor", "details": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, docs)
 }
 
 func (h *Handler) CreateDoctor(c *gin.Context) {
@@ -48,25 +53,47 @@ func (h *Handler) CreateDoctor(c *gin.Context) {
 		return
 	}
 
-	h.mu.Lock()
-	defer h.mu.Unlock()
 	if req.ID == "" {
 		req.ID = "doc-" + time.Now().Format("150405000")
 	}
-	h.doctors[req.ID] = req
+
+	// require DB and persist
+	if h.db == nil || !h.db.Connected || h.db.DB == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	doc := bson.M{
+		"id":           req.ID,
+		"name":         req.Name,
+		"specialty":    req.Specialty,
+		"hospital":     req.Hospital,
+		"availability": req.Availability,
+		"createdAt":    time.Now(),
+	}
+	if _, err := h.db.DB.Collection("doctors").InsertOne(ctx, doc); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to insert doctor", "details": err.Error()})
+		return
+	}
 	c.JSON(http.StatusCreated, req)
 }
 
 func (h *Handler) GetDoctorByID(c *gin.Context) {
 	id := c.Param("id")
-	h.mu.RLock()
-	doctor, found := h.doctors[id]
-	h.mu.RUnlock()
-	if !found {
+	if h.db == nil || !h.db.Connected || h.db.DB == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var doc models.Doctor
+	err := h.db.DB.Collection("doctors").FindOne(ctx, bson.M{"id": id}).Decode(&doc)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "doctor not found"})
 		return
 	}
-	c.JSON(http.StatusOK, doctor)
+	c.JSON(http.StatusOK, doc)
 }
 
 func (h *Handler) Health(c *gin.Context) {

@@ -177,6 +177,94 @@ Apply with your cluster context:
 5. `kubectl apply -f deployments/kubernetes/appointment-deployment.yaml`
 6. `kubectl apply -f deployments/kubernetes/notification-deployment.yaml`
 
+## Run a single service (developer mode)
+
+During development each team member can run one service locally instead of the whole stack. This is useful when a member is responsible for a single microservice. Steps below assume you have Go installed and `.env` configured at the repo root.
+
+Example (run only the Appointment service):
+
+```bash
+# from repo root
+cd services/appointment-service
+# load DB url from project .env into this shell, then run
+set -o allexport; source ../../.env; set +o allexport
+export PORT=8083
+export NOTIFICATION_SERVICE_URL=http://localhost:8084   # point to local notification-service if running
+go run main.go
+```
+
+Notes:
+- Each service reads `DATABASE_URL` from the root `.env`. `DATABASE_URL` is required for the doctor and appointment services; the services will exit at startup if it is not set or the database cannot be reached.
+- If a dependent service is required (e.g., appointment -> notification), either run that service locally on its port or change the `NOTIFICATION_SERVICE_URL` to a test endpoint.
+- To run the Doctor service: `cd services/doctor-service && set -o allexport; source ../../.env; set +o allexport && PORT=8082 go run main.go`.
+- To run Auth: use port `8081`, Notification: `8084`.
+
+Working endpoints per service (use the service's host/port when running a single service):
+
+- Auth Service (http://localhost:8081)
+	- POST /register
+	- POST /login
+	- GET /profile
+	- GET /health
+
+- Doctor Service (http://localhost:8082)
+	- GET /doctors
+	- POST /doctor
+	- GET /doctor/:id
+	- GET /health
+
+- Appointment Service (http://localhost:8083)
+	- POST /appointments
+	- GET /appointments
+	- DELETE /appointments/:id
+	- GET /health
+
+- Notification Service (http://localhost:8084)
+	- POST /send-email
+	- POST /send-sms
+	- GET /health
+
+## Team workflow suggestion (4 members)
+
+This repo maps naturally to a 4-person team — assign one service to each member for fast parallel development:
+
+- Member A: `auth-service` — auth endpoints, token middleware, user lifecycle
+- Member B: `doctor-service` — doctor CRUD and search
+- Member C: `appointment-service` — booking flow, notifications, appointment history
+- Member D: `notification-service` — email/SMS integrations and templates
+
+Guidelines for working in parallel:
+
+- Each developer runs their assigned service locally (see "Run a single service"). Use `PORT` environment variable so services don't conflict with others.
+- For cross-service integration tests, developers can run dependent services locally or use the running Docker Compose stack for shared dependencies.
+- Use the `deploy/k8s-deploy.sh` script to apply secrets/manifests for cluster testing — do not commit secrets.
+- When implementing persistence, write to MongoDB using the `DATABASE_URL` from `.env` so all team members see the same DB in staging.
+- Create small, focused PRs that update one service at a time. Include API contract notes (request/response shapes) in the PR description.
+
+
+### Helpful deploy script
+
+To avoid committing secrets into the repository, there is a small helper script that
+creates the Kubernetes secret from your local `.env` and applies the manifests.
+
+Usage (from repo root):
+```bash
+# make script executable once
+chmod +x deploy/k8s-deploy.sh
+./deploy/k8s-deploy.sh
+```
+
+What it does:
+- extracts `DATABASE_URL` from your local `.env` into a temporary file (not committed)
+- creates/updates the `telemedicine-secrets` Kubernetes Secret
+- applies all manifests under `deployments/kubernetes`
+- triggers rollout restarts so pods pick up the secret
+
+Notes:
+- If running on `kind` or `minikube`, load your local images into the cluster first
+	(e.g. `kind load docker-image <image:tag>`).
+- Do NOT commit the generated temporary files; the script removes them after use.
+
 ## Security Reminder
 
 - Do not commit real secrets in `.env`.
