@@ -1,6 +1,10 @@
 # AI Telemedicine Microservices System
 
-Cloud-native distributed microservices starter for telemedicine use cases (patient, doctor, admin) using Go, Gin, Docker, Docker Compose, Kubernetes manifests, and a Next.js frontend.
+Cloud-native distributed microservices starter for telemedicine use cases (patient, doctor, admin) using a hybrid backend stack:
+- Node.js + Express + MongoDB (MERN-style services): `auth-service-node`, `patient-service-node`
+- Go + Gin services: `doctor-service`, `appointment-service`, `notification-service`
+
+Also includes Docker, Docker Compose, Kubernetes manifests, and a Next.js frontend.
 
 ## Prerequisites
 
@@ -22,6 +26,8 @@ Install the following before running:
 ```text
 AI Telemedicine Microservices System/
 ├── services/
+│   ├── auth-service-node/
+│   ├── patient-service-node/
 │   ├── auth-service/
 │   │   ├── main.go
 │   │   ├── database/
@@ -42,7 +48,8 @@ AI Telemedicine Microservices System/
 
 ## Services and Ports
 
-- Auth Service -> `8081`
+- Auth Service (Node/Express) -> `5001`
+- Patient Service (Node/Express) -> `5002`
 - Doctor Service -> `8082`
 - Appointment Service -> `8083`
 - Notification Service -> `8084`
@@ -51,9 +58,22 @@ AI Telemedicine Microservices System/
 ## API Endpoints
 
 ### Auth Service
-- `POST /register`
-- `POST /login`
-- `GET /profile`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/refresh`
+- `GET /api/auth/me`
+- `POST /api/auth/logout`
+- `GET /health`
+
+### Patient Service
+- `POST /api/patients/internal/create` (internal)
+- `GET /api/patients/me`
+- `PUT /api/patients/me`
+- `POST /api/patients/me/reports`
+- `GET /api/patients/me/reports`
+- `DELETE /api/patients/me/reports/:reportId`
+- `GET /api/patients/me/prescriptions`
+- `GET /api/patients/me/history`
 - `GET /health`
 
 ### Doctor Service
@@ -79,11 +99,15 @@ Use your current `.env` for local runtime and `.env.example` as template.
 
 Required:
 
-- `DATABASE_URL`
+- `DATABASE_URL` (for Go/Gin services still using shared env)
 - `NOTIFICATION_SERVICE_URL` (optional; defaults to `http://notification-service:8084` in containers)
 - `NEXT_PUBLIC_AUTH_SERVICE_URL`
 - `NEXT_PUBLIC_DOCTOR_SERVICE_URL`
 - `NEXT_PUBLIC_APPOINTMENT_SERVICE_URL`
+
+Node service envs:
+- `services/auth-service-node/.env`: `PORT`, `MONGO_URI`, `JWT_SECRET`, `JWT_ACCESS_EXPIRES_IN`, `REFRESH_TOKEN_EXPIRES_DAYS`, `INTERNAL_SERVICE_KEY`, `PATIENT_SERVICE_URL`
+- `services/patient-service-node/.env`: `PORT`, `MONGO_URI`, `JWT_SECRET`, `INTERNAL_SERVICE_KEY`
 
 ## Local Run (Docker Compose) - macOS / Linux (zsh/bash)
 
@@ -115,7 +139,8 @@ Run from the `deployments` folder:
 
 After startup, verify:
 
-- `http://localhost:8081/health`
+- `http://localhost:5001/health`
+- `http://localhost:5002/health`
 - `http://localhost:8082/health`
 - `http://localhost:8083/health`
 - `http://localhost:8084/health`
@@ -152,7 +177,7 @@ Expected behavior:
 
 ## Project Notes
 
-- Auth service is currently **mock-first** by design, so Firebase can be integrated in a later increment.
+- Backend stack is split: Auth + Patient are Node/Express services, while Doctor + Appointment + Notification are Go/Gin services.
 - Appointment service triggers notification service after booking creation.
 - MongoDB Atlas is configured via `DATABASE_URL`.
 - Services are independently deployable and communicate via REST APIs.
@@ -164,6 +189,16 @@ Minimal manifests are under `deployments/kubernetes/`:
 - `configmap.yaml`
 - `secret.yaml`
 - `auth-deployment.yaml`
+- `auth-service-deployment.yaml`
+- `auth-service.yaml`
+- `auth-mongo-deployment.yaml`
+- `auth-mongo-service.yaml`
+- `auth-mongo-pvc.yaml`
+- `patient-service-deployment.yaml`
+- `patient-service.yaml`
+- `patient-mongo-deployment.yaml`
+- `patient-mongo-service.yaml`
+- `patient-mongo-pvc.yaml`
 - `doctor-deployment.yaml`
 - `appointment-deployment.yaml`
 - `notification-deployment.yaml`
