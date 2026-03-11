@@ -2,6 +2,15 @@ const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema(
     {
+        // Firebase Authentication UID (primary identity key across services)
+        firebaseUid: {
+            type: String,
+            required: [true, 'firebaseUid is required'],
+            unique: true,
+            index: true,
+            trim: true,
+        },
+
         // Legal full name of the user
         fullName: {
             type: String,
@@ -17,13 +26,6 @@ const userSchema = new mongoose.Schema(
             lowercase: true,
             trim: true,
             match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email address'],
-        },
-
-        // bcrypt hash — never returned in API responses (select: false)
-        passwordHash: {
-            type: String,
-            required: [true, 'Password is required'],
-            select: false,
         },
 
         // Optional contact number
@@ -50,6 +52,12 @@ const userSchema = new mongoose.Schema(
         isVerified: {
             type: Boolean,
             default: false,
+        },
+
+        // Last time Auth service successfully synced Firebase user metadata
+        lastSyncedAt: {
+            type: Date,
+            default: Date.now,
         },
     },
     {

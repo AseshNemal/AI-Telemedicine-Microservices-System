@@ -1,9 +1,5 @@
-const { registerUser, loginUser } = require('../services/authService');
-const sanitizeUser = require('../utils/sanitizeUser');
-const { signAccessToken } = require('../utils/jwt');
-const RefreshToken = require('../models/RefreshToken');
-const User = require('../models/User');
-const { generateRefreshToken, hashToken, getRefreshExpiryDate } = require('../utils/tokenUtils');
+const { createFirebaseUserWithRole } = require('../services/firebaseAuthService');
+const { upsertAppUserMirror, findAppUserByUid, buildMeResponse } = require('../services/authService');
 const { createDefaultPatientProfile } = require('../utils/patientServiceClient');
 
 // @route  POST /api/auth/register
@@ -11,20 +7,36 @@ const { createDefaultPatientProfile } = require('../utils/patientServiceClient')
 exports.register = async (req, res, next) => {
     try {
         const { fullName, email, password, phone, role } = req.body;
-        const user = await registerUser({ fullName, email, password, phone, role });
+
+        const firebaseUser = await createFirebaseUserWithRole({
+            fullName,
+            email,
+            password,
+            phone,
+            role,
+        });
+
+        const appUser = await upsertAppUserMirror({
+            firebaseUid: firebaseUser.uid,
+            fullName: firebaseUser.fullName,
+            email: firebaseUser.email,
+            phone: firebaseUser.phone,
+            role: firebaseUser.role,
+            isVerified: firebaseUser.emailVerified,
+        });
 
         let profileSync = {
             status: 'not-required',
         };
 
-        // Student-project practical choice: keep user creation successful and log/profile-sync failure for retry.
-        if (user.role === 'PATIENT') {
+        // Practical student-project approach: registration succeeds even if downstream profile sync fails.
+        if (firebaseUser.role === 'PATIENT') {
             try {
                 await createDefaultPatientProfile({
-                    authUserId: String(user.id),
-                    fullName: user.fullName,
-                    email: user.email,
-                    phone: user.phone,
+                    authUserId: firebaseUser.uid,
+                    fullName: firebaseUser.fullName,
+                    email: firebaseUser.email,
+                    phone: firebaseUser.phone,
                 });
 
                 profileSync = {
@@ -39,100 +51,35 @@ exports.register = async (req, res, next) => {
             }
         }
 
-        res.status(201).json({
+        return res.status(201).json({
             success: true,
-            message: 'User registered successfully',
-            data: user,
+            message: 'User registered in Firebase successfully',
+            data: {
+                uid: firebaseUser.uid,
+                email: firebaseUser.email,
+                fullName: firebaseUser.fullName,
+                phone: firebaseUser.phone,
+                role: firebaseUser.role,
+                emailVerified: firebaseUser.emailVerified,
+            },
+            appUser,
             profileSync,
         });
     } catch (err) {
-        next(err);
-    }
-};
+        if (err && err.code === 'auth/email-already-exists') {
+            return res.status(409).json({
+                success: false,
+                message: 'Email already registered',
+            });
+        }
 
-// @route  POST /api/auth/login
-// @access Public
-exports.login = async (req, res, next) => {
-    try {
-        const { email, password } = req.body;
-        const user = await loginUser({ email, password });
-        const accessToken = signAccessToken(user);
-        const refreshToken = generateRefreshToken();
-        const refreshTokenHash = hashToken(refreshToken);
-
-        await RefreshToken.create({
-            userId: user._id,
-            tokenHash: refreshTokenHash,
-            expiresAt: getRefreshExpiryDate(),
-        });
-
-        res.status(200).json({
-            success: true,
-            message: 'Login successful',
-            accessToken,
-            refreshToken,
-            user: sanitizeUser(user),
-        });
-    } catch (err) {
-        next(err);
-    }
-};
-
-// @route  POST /api/auth/refresh
-// @access Public
-exports.refresh = async (req, res, next) => {
-    try {
-        const { refreshToken } = req.body;
-
-        if (!refreshToken) {
+        if (err && err.code === 'auth/invalid-password') {
             return res.status(400).json({
                 success: false,
-                message: 'refreshToken is required',
+                message: 'Password does not meet Firebase requirements',
             });
         }
 
-        const refreshTokenHash = hashToken(refreshToken);
-        const existing = await RefreshToken.findOne({ tokenHash: refreshTokenHash, revokedAt: null }).lean();
-
-        if (!existing || existing.expiresAt <= new Date()) {
-            return res.status(401).json({
-                success: false,
-                message: 'Invalid or expired refresh token',
-            });
-        }
-
-        const user = await User.findById(existing.userId);
-        if (!user || !user.isActive) {
-            return res.status(401).json({
-                success: false,
-                message: 'User is not active',
-            });
-        }
-
-        const newRefreshToken = generateRefreshToken();
-        const newRefreshTokenHash = hashToken(newRefreshToken);
-
-        await RefreshToken.findByIdAndUpdate(existing._id, {
-            revokedAt: new Date(),
-            replacedByTokenHash: newRefreshTokenHash,
-        });
-
-        await RefreshToken.create({
-            userId: user._id,
-            tokenHash: newRefreshTokenHash,
-            expiresAt: getRefreshExpiryDate(),
-        });
-
-        const accessToken = signAccessToken(user);
-
-        return res.status(200).json({
-            success: true,
-            message: 'Token refreshed successfully',
-            accessToken,
-            refreshToken: newRefreshToken,
-            user: sanitizeUser(user),
-        });
-    } catch (err) {
         return next(err);
     }
 };
@@ -141,18 +88,21 @@ exports.refresh = async (req, res, next) => {
 // @access Private
 exports.me = async (req, res, next) => {
     try {
-        const userId = req.user && (req.user.sub || req.user.id);
-        const user = await User.findById(userId);
+        const uid = req.user && req.user.uid;
 
-        if (!user) {
-            const err = new Error('User not found');
-            err.status = 404;
-            return next(err);
+        if (!uid) {
+            return res.status(401).json({
+                success: false,
+                message: 'Unauthorized',
+            });
         }
+
+        const appUser = await findAppUserByUid(uid);
+        const meData = buildMeResponse(req.user, appUser);
 
         return res.status(200).json({
             success: true,
-            data: sanitizeUser(user),
+            data: meData,
         });
     } catch (err) {
         return next(err);
@@ -161,29 +111,11 @@ exports.me = async (req, res, next) => {
 
 // @route  POST /api/auth/logout
 // @access Private
-exports.logout = async (req, res, next) => {
-    try {
-        const { refreshToken } = req.body;
-
-        if (!refreshToken) {
-            return res.status(400).json({
-                success: false,
-                message: 'refreshToken is required',
-            });
-        }
-
-        const tokenHash = hashToken(refreshToken);
-
-        await RefreshToken.findOneAndUpdate(
-            { tokenHash, revokedAt: null },
-            { revokedAt: new Date() }
-        );
-
-        return res.status(200).json({
-            success: true,
-            message: 'Logged out successfully',
-        });
-    } catch (err) {
-        return next(err);
-    }
+exports.logout = async (req, res) => {
+    // In Firebase-auth-only architecture, backend logout does not revoke local refresh tokens.
+    // Frontend should clear local session and rely on Firebase client signOut().
+    return res.status(200).json({
+        success: true,
+        message: 'Logout acknowledged. Clear client session/token on frontend.',
+    });
 };
