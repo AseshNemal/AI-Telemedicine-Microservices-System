@@ -1,6 +1,6 @@
-const jwt = require('jsonwebtoken');
+const { verifyFirebaseIdToken } = require('../config/firebaseAdmin');
 
-const authenticateJWT = (req, res, next) => {
+const authenticateFirebaseToken = async (req, res, next) => {
     const authHeader = req.headers.authorization || '';
 
     if (!authHeader.startsWith('Bearer ')) {
@@ -13,8 +13,16 @@ const authenticateJWT = (req, res, next) => {
     const token = authHeader.slice(7);
 
     try {
-        const payload = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = payload;
+        const decodedToken = await verifyFirebaseIdToken(token);
+
+        req.user = {
+            uid: decodedToken.uid,
+            sub: decodedToken.uid,
+            email: decodedToken.email || null,
+            role: decodedToken.role || null,
+            claims: decodedToken,
+        };
+
         return next();
     } catch (err) {
         return res.status(401).json({
@@ -25,5 +33,5 @@ const authenticateJWT = (req, res, next) => {
 };
 
 module.exports = {
-    authenticateJWT,
+    authenticateFirebaseToken,
 };

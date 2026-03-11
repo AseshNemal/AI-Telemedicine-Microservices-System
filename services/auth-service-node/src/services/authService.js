@@ -1,56 +1,60 @@
-const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 const sanitizeUser = require('../utils/sanitizeUser');
 
-const registerUser = async ({ fullName, email, password, phone, role }) => {
-    const existing = await User.findOne({ email });
-    if (existing) {
-        const err = new Error('Email already registered');
-        err.status = 409;
-        throw err;
-    }
+const ALLOWED_ROLES = ['PATIENT', 'DOCTOR', 'ADMIN'];
 
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    const user = await User.create({
-        fullName,
-        email,
-        passwordHash,
-        phone,
-        role,
-        isActive: true,
-        isVerified: role === 'DOCTOR' ? false : true,
-    });
-
-    return sanitizeUser(user);
+const normalizeRole = (role) => {
+    const normalized = String(role || 'PATIENT').toUpperCase();
+    return ALLOWED_ROLES.includes(normalized) ? normalized : 'PATIENT';
 };
 
-const loginUser = async ({ email, password }) => {
-    const user = await User.findOne({ email }).select('+passwordHash');
+const upsertAppUserMirror = async ({ firebaseUid, fullName, email, phone, role, isVerified }) => {
+    const normalizedRole = normalizeRole(role);
 
-    if (!user) {
-        const err = new Error('Invalid email or password');
-        err.status = 401;
-        throw err;
-    }
-
-    const passwordOk = await bcrypt.compare(password, user.passwordHash);
-    if (!passwordOk) {
-        const err = new Error('Invalid email or password');
-        err.status = 401;
-        throw err;
-    }
-
-    if (!user.isActive) {
-        const err = new Error('Account is inactive');
-        err.status = 403;
-        throw err;
-    }
+    const user = await User.findOneAndUpdate(
+        { firebaseUid },
+        {
+            $set: {
+                fullName,
+                email,
+                phone: phone || null,
+                role: normalizedRole,
+                isVerified: Boolean(isVerified),
+                isActive: true,
+                lastSyncedAt: new Date(),
+            },
+            $setOnInsert: {
+                firebaseUid,
+            },
+        },
+        { upsert: true, new: true, runValidators: true }
+    );
 
     return user;
 };
 
+const findAppUserByUid = async (firebaseUid) => {
+    return User.findOne({ firebaseUid });
+};
+
+const buildMeResponse = (decodedToken, appUser) => {
+    const roleFromClaims = decodedToken.role || (decodedToken.claims && decodedToken.claims.role) || null;
+    const roleFromMirror = appUser ? appUser.role : null;
+
+    return {
+        uid: decodedToken.uid,
+        email: decodedToken.email || null,
+        fullName: decodedToken.name || (appUser && appUser.fullName) || null,
+        role: roleFromClaims || roleFromMirror || 'PATIENT',
+        emailVerified: Boolean(decodedToken.email_verified),
+        appUser: appUser ? sanitizeUser(appUser) : null,
+    };
+};
+
 module.exports = {
-    registerUser,
-    loginUser,
+    ALLOWED_ROLES,
+    normalizeRole,
+    upsertAppUserMirror,
+    findAppUserByUid,
+    buildMeResponse,
 };

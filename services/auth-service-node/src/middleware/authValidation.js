@@ -17,12 +17,6 @@ const registerValidation = [
         .withMessage('role must be one of PATIENT, DOCTOR, ADMIN'),
 ];
 
-const loginValidation = [
-    body('email').trim().isEmail().withMessage('Valid email is required').normalizeEmail(),
-    body('password').isString().withMessage('password is required').notEmpty().withMessage('password is required'),
-];
-
 module.exports = {
     registerValidation,
-    loginValidation,
 };

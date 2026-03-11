@@ -1,16 +1,19 @@
 const swaggerJSDoc = require('swagger-jsdoc');
 
+const authPort = process.env.AUTH_PORT || process.env.PORT || '5001';
+const authServerUrl = `http://localhost:${authPort}`;
+
 const options = {
     definition: {
         openapi: '3.0.3',
         info: {
             title: 'Auth Service API',
-            version: '1.0.0',
-            description: 'Authentication and token lifecycle APIs for telemedicine platform.',
+            version: '2.0.0',
+            description: 'Firebase-auth-only user registration and identity APIs for telemedicine platform.',
         },
         servers: [
             {
-                url: 'http://localhost:5001',
+                url: authServerUrl,
             },
         ],
         components: {
@@ -18,47 +21,33 @@ const options = {
                 bearerAuth: {
                     type: 'http',
                     scheme: 'bearer',
-                    bearerFormat: 'JWT',
+                    bearerFormat: 'Firebase ID Token',
                 },
             },
             schemas: {
                 RegisterRequest: {
                     type: 'object',
-                    required: ['fullName', 'email', 'password', 'role'],
+                    required: ['fullName', 'email', 'password'],
                     properties: {
                         fullName: { type: 'string', example: 'John Doe' },
                         email: { type: 'string', format: 'email', example: 'john@example.com' },
-                        password: { type: 'string', minLength: 6, example: 'Pass1234!' },
-                        phone: { type: 'string', example: '0771234567' },
+                        password: { type: 'string', minLength: 8, example: 'Pass1234!' },
+                        phone: { type: 'string', example: '+94771234567' },
                         role: { type: 'string', enum: ['PATIENT', 'DOCTOR', 'ADMIN'], example: 'PATIENT' },
                     },
                 },
-                LoginRequest: {
-                    type: 'object',
-                    required: ['email', 'password'],
-                    properties: {
-                        email: { type: 'string', format: 'email', example: 'john@example.com' },
-                        password: { type: 'string', example: 'Pass1234!' },
-                    },
-                },
-                RefreshRequest: {
-                    type: 'object',
-                    required: ['refreshToken'],
-                    properties: {
-                        refreshToken: { type: 'string' },
-                    },
-                },
-                User: {
+                MeResponse: {
                     type: 'object',
                     properties: {
-                        id: { type: 'string' },
-                        fullName: { type: 'string' },
-                        email: { type: 'string', format: 'email' },
-                        phone: { type: 'string', nullable: true },
-                        role: { type: 'string' },
-                        isActive: { type: 'boolean' },
-                        createdAt: { type: 'string', format: 'date-time' },
-                        updatedAt: { type: 'string', format: 'date-time' },
+                        uid: { type: 'string' },
+                        email: { type: 'string', format: 'email', nullable: true },
+                        fullName: { type: 'string', nullable: true },
+                        role: { type: 'string', enum: ['PATIENT', 'DOCTOR', 'ADMIN'] },
+                        emailVerified: { type: 'boolean' },
+                        appUser: {
+                            type: 'object',
+                            nullable: true,
+                        },
                     },
                 },
             },
@@ -78,7 +67,7 @@ const options = {
             '/api/auth/register': {
                 post: {
                     tags: ['Auth'],
-                    summary: 'Register user',
+                    summary: 'Register user in Firebase and assign role claim',
                     requestBody: {
                         required: true,
                         content: {
@@ -89,51 +78,15 @@ const options = {
                     },
                     responses: {
                         201: { description: 'User registered' },
-                        400: { description: 'Validation error' },
+                        400: { description: 'Validation or Firebase input error' },
                         409: { description: 'Email already exists' },
-                    },
-                },
-            },
-            '/api/auth/login': {
-                post: {
-                    tags: ['Auth'],
-                    summary: 'Login user',
-                    requestBody: {
-                        required: true,
-                        content: {
-                            'application/json': {
-                                schema: { $ref: '#/components/schemas/LoginRequest' },
-                            },
-                        },
-                    },
-                    responses: {
-                        200: { description: 'Login successful' },
-                        401: { description: 'Invalid credentials' },
-                    },
-                },
-            },
-            '/api/auth/refresh': {
-                post: {
-                    tags: ['Auth'],
-                    summary: 'Refresh JWT access token',
-                    requestBody: {
-                        required: true,
-                        content: {
-                            'application/json': {
-                                schema: { $ref: '#/components/schemas/RefreshRequest' },
-                            },
-                        },
-                    },
-                    responses: {
-                        200: { description: 'Token refreshed' },
-                        401: { description: 'Invalid refresh token' },
                     },
                 },
             },
             '/api/auth/me': {
                 get: {
                     tags: ['Auth'],
-                    summary: 'Get current user profile',
+                    summary: 'Get current Firebase-authenticated user profile',
                     security: [{ bearerAuth: [] }],
                     responses: {
                         200: {
@@ -144,7 +97,7 @@ const options = {
                                         type: 'object',
                                         properties: {
                                             success: { type: 'boolean' },
-                                            data: { $ref: '#/components/schemas/User' },
+                                            data: { $ref: '#/components/schemas/MeResponse' },
                                         },
                                     },
                                 },
@@ -157,18 +110,10 @@ const options = {
             '/api/auth/logout': {
                 post: {
                     tags: ['Auth'],
-                    summary: 'Logout (revoke refresh token)',
+                    summary: 'Acknowledge logout for Firebase-auth-only clients',
                     security: [{ bearerAuth: [] }],
-                    requestBody: {
-                        required: true,
-                        content: {
-                            'application/json': {
-                                schema: { $ref: '#/components/schemas/RefreshRequest' },
-                            },
-                        },
-                    },
                     responses: {
-                        200: { description: 'Logged out successfully' },
+                        200: { description: 'Logout acknowledged' },
                         401: { description: 'Unauthorized' },
                     },
                 },
