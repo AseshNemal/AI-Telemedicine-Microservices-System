@@ -18,8 +18,9 @@ Install the following before running:
 ## Quick Setup
 
 1. Ensure `.env` exists at project root (same level as `README.md`).
-2. Put your MongoDB Atlas connection string in `DATABASE_URL`.
-3. (Optional) Use `.env.example` as a reference template.
+2. Configure MongoDB + Firebase env values using `.env.example`.
+3. Place Firebase service account JSON at `secrets/firebase-service-account.json`.
+4. (Optional) Use `.env.example` as a reference template.
 
 ## Project Structure
 
@@ -59,14 +60,13 @@ AI Telemedicine Microservices System/
 
 ### Auth Service
 - `POST /api/auth/register`
-- `POST /api/auth/login`
-- `POST /api/auth/refresh`
 - `GET /api/auth/me`
 - `POST /api/auth/logout`
 - `GET /health`
 
 ### Patient Service
 - `POST /api/patients/internal/create` (internal)
+- `GET /api/patients/internal/:authUserId` (internal)
 - `GET /api/patients/me`
 - `PUT /api/patients/me`
 - `POST /api/patients/me/reports`
@@ -99,15 +99,27 @@ Use your current `.env` for local runtime and `.env.example` as template.
 
 Required:
 
-- `DATABASE_URL` (for Go/Gin services still using shared env)
-- `NOTIFICATION_SERVICE_URL` (optional; defaults to `http://notification-service:8084` in containers)
-- `NEXT_PUBLIC_AUTH_SERVICE_URL`
-- `NEXT_PUBLIC_DOCTOR_SERVICE_URL`
-- `NEXT_PUBLIC_APPOINTMENT_SERVICE_URL`
+- Shared:
+	- `DATABASE_URL` (Go services compatibility)
+	- `NOTIFICATION_SERVICE_URL`
+	- `INTERNAL_SERVICE_KEY`
+- Auth service:
+	- `AUTH_MONGO_URI`
+	- `PATIENT_SERVICE_URL`
+- Patient service:
+	- `PATIENT_MONGO_URI`
+- Firebase (recommended file-based credentials):
+	- `FIREBASE_SERVICE_ACCOUNT_PATH`
+	- Optional fallback: `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`
+- Frontend URLs:
+	- `NEXT_PUBLIC_AUTH_SERVICE_URL`
+	- `NEXT_PUBLIC_PATIENT_SERVICE_URL`
+	- `NEXT_PUBLIC_DOCTOR_SERVICE_URL`
+	- `NEXT_PUBLIC_APPOINTMENT_SERVICE_URL`
 
-Node service envs:
-- `services/auth-service-node/.env`: `PORT`, `MONGO_URI`, `JWT_SECRET`, `JWT_ACCESS_EXPIRES_IN`, `REFRESH_TOKEN_EXPIRES_DAYS`, `INTERNAL_SERVICE_KEY`, `PATIENT_SERVICE_URL`
-- `services/patient-service-node/.env`: `PORT`, `MONGO_URI`, `JWT_SECRET`, `INTERNAL_SERVICE_KEY`
+Node service runtime mapping in Docker/K8s:
+- Auth service uses `MONGO_URI`, `PATIENT_SERVICE_URL`, `INTERNAL_SERVICE_KEY`, Firebase vars
+- Patient service uses `MONGO_URI`, `INTERNAL_SERVICE_KEY`, Firebase vars
 
 ## Local Run (Docker Compose) - macOS / Linux (zsh/bash)
 
@@ -149,9 +161,14 @@ After startup, verify:
 
 Register user:
 
-- Endpoint: `POST http://localhost:8081/register`
+- Endpoint: `POST http://localhost:5001/api/auth/register`
 - Sample payload:
-	- `{"name":"Alex","email":"alex@example.com","password":"123456","role":"Patient"}`
+	- `{"fullName":"Alex","email":"alex@example.com","password":"Pass12345!","role":"PATIENT"}`
+
+Get current user (requires Firebase ID token):
+
+- Endpoint: `GET http://localhost:5001/api/auth/me`
+- Header: `Authorization: Bearer <firebase_id_token>`
 
 Create appointment:
 
@@ -171,16 +188,33 @@ Expected behavior:
 - Port already in use:
 	- Stop conflicting process or change host port mapping in `deployments/docker-compose.yml`.
 - MongoDB connection errors:
-	- Re-check `DATABASE_URL` in root `.env`.
+	- Re-check `AUTH_MONGO_URI` / `PATIENT_MONGO_URI` (or fallback `DATABASE_URL`) in root `.env`.
+- Firebase credential errors at startup:
+	- Ensure `FIREBASE_SERVICE_ACCOUNT_PATH` points to mounted file and file exists.
 - Stale containers/images:
 	- Run `docker compose down` then `docker compose up --build`.
 
 ## Project Notes
 
 - Backend stack is split: Auth + Patient are Node/Express services, while Doctor + Appointment + Notification are Go/Gin services.
+- Authentication is Firebase-auth-only:
+	- Auth Service creates Firebase users + role claims.
+	- Auth/Patient verify Firebase ID tokens with Firebase Admin SDK.
 - Appointment service triggers notification service after booking creation.
 - MongoDB Atlas is configured via `DATABASE_URL`.
 - Services are independently deployable and communicate via REST APIs.
+
+## Backend Integration Testing
+
+Use the manual/Postman checklist in:
+
+- `docs/backend-integration-testing-checklist.md`
+
+It covers:
+- PATIENT registration + profile bootstrap
+- Firebase token verification in Auth/Patient services
+- `/api/patients/me` profile/report/prescription/history flows
+- happy path + failure case scenarios
 
 ## Kubernetes Starter Manifests
 
@@ -232,14 +266,44 @@ Notes:
 - Each service reads `DATABASE_URL` from the root `.env`. `DATABASE_URL` is required for the doctor and appointment services; the services will exit at startup if it is not set or the database cannot be reached.
 - If a dependent service is required (e.g., appointment -> notification), either run that service locally on its port or change the `NOTIFICATION_SERVICE_URL` to a test endpoint.
 - To run the Doctor service: `cd services/doctor-service && set -o allexport; source ../../.env; set +o allexport && PORT=8082 go run main.go`.
-- To run Auth: use port `8081`, Notification: `8084`.
+- To run Notification: use port `8084`.
+
+Run Auth Service (Node/Express, Firebase-auth-only):
+
+```bash
+cd services/auth-service-node
+npm install
+npm start
+```
+
+Run Patient Service (Node/Express):
+
+```bash
+cd services/patient-service-node
+npm install
+npm start
+```
+
+Auth and Patient services read from the root `.env` file.
 
 Working endpoints per service (use the service's host/port when running a single service):
 
-- Auth Service (http://localhost:8081)
-	- POST /register
-	- POST /login
-	- GET /profile
+- Auth Service (http://localhost:5001)
+	- POST /api/auth/register
+	- GET /api/auth/me
+	- POST /api/auth/logout
+	- GET /health
+
+- Patient Service (http://localhost:5002)
+	- POST /api/patients/internal/create (internal)
+	- GET /api/patients/internal/:authUserId (internal)
+	- GET /api/patients/me
+	- PUT /api/patients/me
+	- POST /api/patients/me/reports
+	- GET /api/patients/me/reports
+	- DELETE /api/patients/me/reports/:reportId
+	- GET /api/patients/me/prescriptions
+	- GET /api/patients/me/history
 	- GET /health
 
 - Doctor Service (http://localhost:8082)
@@ -290,7 +354,8 @@ chmod +x deploy/k8s-deploy.sh
 ```
 
 What it does:
-- extracts `DATABASE_URL` from your local `.env` into a temporary file (not committed)
+- extracts shared secret env keys from your local `.env` into a temporary file (not committed)
+- creates/updates Firebase service account Kubernetes secret if local file exists
 - creates/updates the `telemedicine-secrets` Kubernetes Secret
 - applies all manifests under `deployments/kubernetes`
 - triggers rollout restarts so pods pick up the secret
