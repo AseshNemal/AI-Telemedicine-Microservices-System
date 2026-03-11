@@ -1,5 +1,8 @@
+<<<<<<< Updated upstream
 .env
 node_modules/
 **/node_modules/
 uploads/
 **/uploads/
+=======
+>>>>>>> Stashed changes
