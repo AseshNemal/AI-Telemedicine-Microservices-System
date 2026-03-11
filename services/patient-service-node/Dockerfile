@@ -7,9 +7,10 @@ RUN npm ci --omit=dev
 
 COPY src ./src
 COPY uploads ./uploads
-RUN mkdir -p /app/uploads/reports && chown -R node:node /app
+RUN mkdir -p /app/uploads/reports /var/secrets/firebase && chown -R node:node /app /var/secrets/firebase
 
 ENV NODE_ENV=production
+ENV FIREBASE_SERVICE_ACCOUNT_PATH=/var/secrets/firebase/service-account.json
 EXPOSE 5002
 
 USER node

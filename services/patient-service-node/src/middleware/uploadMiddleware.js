@@ -30,13 +30,32 @@ const fileFilter = (req, file, cb) => {
     return cb(null, true);
 };
 
-const uploadMedicalReport = multer({
+const uploadMedicalReportHandler = multer({
     storage,
     fileFilter,
     limits: {
         fileSize: 5 * 1024 * 1024,
     },
-}).single('file');
+}).fields([
+    { name: 'file', maxCount: 1 },
+    { name: 'report', maxCount: 1 },
+]);
+
+const uploadMedicalReport = (req, res, next) => {
+    uploadMedicalReportHandler(req, res, (err) => {
+        if (err) {
+            return next(err);
+        }
+
+        if (req.files && req.files.file && req.files.file.length > 0) {
+            [req.file] = req.files.file;
+        } else if (req.files && req.files.report && req.files.report.length > 0) {
+            [req.file] = req.files.report;
+        }
+
+        return next();
+    });
+};
 
 module.exports = {
     uploadMedicalReport,

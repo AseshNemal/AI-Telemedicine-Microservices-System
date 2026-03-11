@@ -11,7 +11,7 @@ const emergencyContactSchema = new mongoose.Schema(
 
 const patientSchema = new mongoose.Schema(
     {
-        // Link back to authenticated user record in auth service
+        // Link back to Firebase Authentication user identity (uid)
         authUserId: {
             type: String,
             required: [true, 'authUserId is required'],

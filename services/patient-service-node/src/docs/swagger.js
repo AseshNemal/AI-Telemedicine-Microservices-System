@@ -1,16 +1,19 @@
 const swaggerJSDoc = require('swagger-jsdoc');
 
+const patientPort = process.env.PATIENT_PORT || process.env.PORT || '5002';
+const patientServerUrl = `http://localhost:${patientPort}`;
+
 const options = {
     definition: {
         openapi: '3.0.3',
         info: {
             title: 'Patient Service API',
-            version: '1.0.0',
-            description: 'Patient profile, reports, prescriptions, and history APIs.',
+            version: '2.0.0',
+            description: 'Firebase-authenticated patient profile, reports, prescriptions, and history APIs.',
         },
         servers: [
             {
-                url: 'http://localhost:5002',
+                url: patientServerUrl,
             },
         ],
         components: {
@@ -18,7 +21,7 @@ const options = {
                 bearerAuth: {
                     type: 'http',
                     scheme: 'bearer',
-                    bearerFormat: 'JWT',
+                    bearerFormat: 'Firebase ID Token',
                 },
                 internalKey: {
                     type: 'apiKey',
@@ -84,6 +87,26 @@ const options = {
                     responses: {
                         201: { description: 'Patient profile created' },
                         401: { description: 'Invalid internal key' },
+                    },
+                },
+            },
+            '/api/patients/internal/{authUserId}': {
+                get: {
+                    tags: ['Internal'],
+                    summary: 'Get patient profile by auth user ID (internal use)',
+                    security: [{ internalKey: [] }],
+                    parameters: [
+                        {
+                            in: 'path',
+                            name: 'authUserId',
+                            required: true,
+                            schema: { type: 'string' },
+                        },
+                    ],
+                    responses: {
+                        200: { description: 'Patient profile returned' },
+                        401: { description: 'Invalid internal key' },
+                        404: { description: 'Patient profile not found' },
                     },
                 },
             },
