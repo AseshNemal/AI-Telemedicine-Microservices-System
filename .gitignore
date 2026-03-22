@@ -1,1 +1,21 @@
 .env
+.env.*
+!.env.example
+node_modules/
+**/node_modules/
+uploads/
+**/uploads/
+secrets/
+**/secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+web-app/.next/
+**/.next/
+.DS_Store
+
+# local git hooks folder
+.githooks/*.log
