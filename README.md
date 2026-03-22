@@ -2,7 +2,7 @@
 
 Cloud-native distributed microservices starter for telemedicine use cases (patient, doctor, admin) using a hybrid backend stack:
 - Node.js + Express + MongoDB (MERN-style services): `auth-service-node`, `patient-service-node`
-- Go + Gin services: `doctor-service`, `appointment-service`, `notification-service`
+- Go + Gin services: `doctor-service`, `appointment-service`, `notification-service`, `payment-service`
 
 Also includes Docker, Docker Compose, Kubernetes manifests, and a Next.js frontend.
 
@@ -29,12 +29,12 @@ Install the following before running:
 │                    Next.js Web App (3000)                    │
 ├──────────────────────────────────────────────────────────────┤
 │                  NGINX API Gateway (80)                      │
-├──────┬──────────┬──────────┬──────────┬────────────────────┤
-│      │          │          │          │                    │
-│ Auth │ Patient  │ Doctor   │Appt      │ Notification       │
-│5001  │  5002    │  8082    │ 8083     │    8084            │
-│Node  │  Node    │   Go     │   Go     │    Go              │
-└──────┴──────────┴──────────┴──────────┴────────────────────┘
+├──────┬──────────┬──────────┬──────────┬────────┬────────────┤
+│      │          │          │          │        │            │
+│ Auth │ Patient  │ Doctor   │Appt      │ Notify │  Payment   │
+│5001  │  5002    │  8082    │ 8083     │  8084  │  8085      │
+│Node  │  Node    │   Go     │   Go     │   Go   │    Go      │
+└──────┴──────────┴──────────┴──────────┴────────┴────────────┘
 ```
 
 The **NGINX API Gateway** provides a single entry point for all microservices. See [api-gateway-nginx/README.md](api-gateway-nginx/README.md) for detailed configuration and deployment options.
@@ -67,7 +67,7 @@ AI Telemedicine Microservices System/
 ## Services and Ports
 
 **API Gateway (single entry point):**
-- Gateway -> `80` (access all services via `/api/*`, `/doctors`, `/appointments`, etc.)
+- Gateway -> `80` (access all services via `/api/*`, `/doctors`, `/appointments`, `/payments`, etc.)
 
 **Individual Service Ports (for direct access during development):**
 - Auth Service (Node/Express) -> `5001`
@@ -75,6 +75,7 @@ AI Telemedicine Microservices System/
 - Doctor Service -> `8082`
 - Appointment Service -> `8083`
 - Notification Service -> `8084`
+- Payment Service -> `8085`
 - Next.js Frontend -> `3000`
 
 ## API Endpoints
@@ -113,6 +114,14 @@ AI Telemedicine Microservices System/
 - `POST /send-email`
 - `POST /send-sms`
 - `GET /health`
+
+### Payment Service
+- `POST /payments` (Create payment)
+- `GET /payments/:transactionId` (Get payment by transaction ID)
+- `GET /patients/:patientId/payments` (Get all patient payments)
+- `DELETE /payments/:transactionId` (Cancel payment)
+- `POST /webhook` (Payment provider webhook)
+- `GET /health` (Health check)
 
 ## Environment Variables
 
@@ -155,6 +164,7 @@ Run from the `deployments/` directory:
 	 - Patient Service: `http://localhost/api/patients`
 	 - Doctor Service: `http://localhost/doctors`
 	 - Appointment Service: `http://localhost/appointments`
+	 - Payment Service: `http://localhost/payments`
 	 - Notifications: `http://localhost/send-email`, `/send-sms`
 	 - Frontend: `http://localhost:3000`
 	 - Swagger Docs: `http://localhost/api-docs`
@@ -175,6 +185,7 @@ Run from the `deployments` folder:
 	 - Patient Service: `http://localhost/api/patients`
 	 - Doctor Service: `http://localhost/doctors`
 	 - Appointment Service: `http://localhost/appointments`
+	 - Payment Service: `http://localhost/payments`
 	 - Notifications: `http://localhost/send-email`, `/send-sms`
 	 - Frontend: `http://localhost:3000`
 	 - Swagger Docs: `http://localhost/api-docs`
@@ -199,6 +210,7 @@ Or direct service checks:
 - `http://localhost:8082/health`
 - `http://localhost:8083/health`
 - `http://localhost:8084/health`
+- `http://localhost:8085/health`
 
 ## API Smoke Test (Sample Data)
 
@@ -284,6 +296,8 @@ Minimal manifests are under `deployments/kubernetes/`:
 - `doctor-deployment.yaml`
 - `appointment-deployment.yaml`
 - `notification-deployment.yaml`
+- `payment-deployment.yaml`
+- `mongodb-payment-statefulset.yaml`
 
 Apply with your cluster context:
 

@@ -10,11 +10,11 @@ import (
 type PaymentStatus string
 
 const (
-	PaymentPending    PaymentStatus = "PENDING"
-	PaymentCompleted  PaymentStatus = "COMPLETED"
-	PaymentFailed     PaymentStatus = "FAILED"
-	PaymentCancelled  PaymentStatus = "CANCELLED"
-	PaymentRefunded   PaymentStatus = "REFUNDED"
+	PaymentPending   PaymentStatus = "PENDING"
+	PaymentCompleted PaymentStatus = "COMPLETED"
+	PaymentFailed    PaymentStatus = "FAILED"
+	PaymentCancelled PaymentStatus = "CANCELLED"
+	PaymentRefunded  PaymentStatus = "REFUNDED"
 )
 
 // PaymentMethod defines the payment method
@@ -28,22 +28,22 @@ const (
 
 // Payment represents a payment transaction
 type Payment struct {
-	ID              primitive.ObjectID `bson:"_id,omitempty" json:"id,omitempty"`
-	AppointmentID   string             `bson:"appointmentId" json:"appointmentId"`
-	PatientID       string             `bson:"patientId" json:"patientId"`
-	DoctorID        string             `bson:"doctorId" json:"doctorId"`
-	Amount          float64            `bson:"amount" json:"amount"`
-	Currency        string             `bson:"currency" json:"currency"`
-	Status          PaymentStatus      `bson:"status" json:"status"`
-	PaymentMethod   PaymentMethod      `bson:"paymentMethod" json:"paymentMethod"`
-	TransactionID   string             `bson:"transactionId" json:"transactionId"`
-	CheckoutURL     string             `bson:"checkoutUrl" json:"checkoutUrl"`
-	ProviderID      string             `bson:"providerId" json:"providerId"` // Stripe, PayHere, etc.
+	ID               primitive.ObjectID     `bson:"_id,omitempty" json:"id,omitempty"`
+	AppointmentID    string                 `bson:"appointmentId" json:"appointmentId"`
+	PatientID        string                 `bson:"patientId" json:"patientId"`
+	DoctorID         string                 `bson:"doctorId" json:"doctorId"`
+	Amount           float64                `bson:"amount" json:"amount"`
+	Currency         string                 `bson:"currency" json:"currency"`
+	Status           PaymentStatus          `bson:"status" json:"status"`
+	PaymentMethod    PaymentMethod          `bson:"paymentMethod" json:"paymentMethod"`
+	TransactionID    string                 `bson:"transactionId" json:"transactionId"`
+	CheckoutURL      string                 `bson:"checkoutUrl" json:"checkoutUrl"`
+	ProviderID       string                 `bson:"providerId" json:"providerId"` // Stripe, PayHere, etc.
 	ProviderResponse map[string]interface{} `bson:"providerResponse" json:"providerResponse"`
-	CreatedAt       time.Time          `bson:"createdAt" json:"createdAt"`
-	UpdatedAt       time.Time          `bson:"updatedAt" json:"updatedAt"`
-	CompletedAt     *time.Time         `bson:"completedAt,omitempty" json:"completedAt,omitempty"`
-	Notes           string             `bson:"notes" json:"notes"`
+	CreatedAt        time.Time              `bson:"createdAt" json:"createdAt"`
+	UpdatedAt        time.Time              `bson:"updatedAt" json:"updatedAt"`
+	CompletedAt      *time.Time             `bson:"completedAt,omitempty" json:"completedAt,omitempty"`
+	Notes            string                 `bson:"notes" json:"notes"`
 }
 
 // PaymentRequest represents incoming payment request
@@ -68,9 +68,9 @@ type PaymentResponse struct {
 
 // WebhookPayload represents payment provider webhook payload
 type WebhookPayload struct {
-	EventType    string                 `json:"eventType"`
-	TransactionID string                `json:"transactionId"`
-	Status       string                 `json:"status"`
-	Amount       float64                `json:"amount"`
-	Data         map[string]interface{} `json:"data"`
+	EventType     string                 `json:"eventType"`
+	TransactionID string                 `json:"transactionId"`
+	Status        string                 `json:"status"`
+	Amount        float64                `json:"amount"`
+	Data          map[string]interface{} `json:"data"`
 }

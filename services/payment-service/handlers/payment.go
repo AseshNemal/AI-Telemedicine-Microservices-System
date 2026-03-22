@@ -6,11 +6,12 @@ import (
 	"net/http"
 	"time"
 
+	"payment-service/models"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
-	"payment-service/models"
 )
 
 // Handler holds the database connection
@@ -162,9 +163,9 @@ func (h *Handler) HandleWebhook(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "webhook processed successfully",
+		"message":       "webhook processed successfully",
 		"transactionId": payload.TransactionID,
-		"status": status,
+		"status":        status,
 	})
 }
 
@@ -234,8 +235,7 @@ func (h *Handler) CancelPayment(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "payment cancelled successfully",
+		"message":       "payment cancelled successfully",
 		"transactionId": transactionID,
 	})
 }
-
