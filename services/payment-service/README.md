@@ -4,11 +4,12 @@ Go + Gin microservice for payment lifecycle operations in the telemedicine syste
 
 ## What this service does
 
-- Create payment requests
+- Create Stripe Checkout payment sessions
 - Track payment by transaction ID
 - List all payments for a patient
 - Cancel pending payments
-- Process provider webhooks
+- Verify Stripe payment status without webhook (using `session_id`)
+- Process provider webhooks (optional)
 
 ## Default runtime
 
@@ -22,10 +23,14 @@ Go + Gin microservice for payment lifecycle operations in the telemedicine syste
 Required:
 
 - `DATABASE_URL` (MongoDB connection URI)
+- `STRIPE_SECRET_KEY` (Stripe test secret key, starts with `sk_test_` in sandbox)
 
 Optional:
 
 - `PORT` (default: `8085`)
+- `FRONTEND_BASE_URL` (default: `http://localhost:3000`)
+- `STRIPE_WEBHOOK_SECRET` (only required when webhook flow is enabled)
+- `NEXT_PUBLIC_STRIPE_PUBLIC_KEY` (frontend/browser usage)
 
 ### Notes on env loading
 
@@ -83,6 +88,12 @@ Request body:
 
 - `GET /payments/:transactionId`
 
+### Verify payment (no-webhook flow)
+
+- `GET /payments/verify?session_id=cs_test_...`
+
+Use this after successful Stripe redirect to mark payment completed.
+
 ### Get all payments by patient
 
 - `GET /patients/:patientId/payments`
@@ -94,6 +105,8 @@ Request body:
 ### Provider webhook
 
 - `POST /webhook`
+
+> Webhook is optional if you use `/payments/verify` after checkout success redirect.
 
 Example webhook body:
 
@@ -138,6 +151,12 @@ Get payment:
 curl http://localhost:8085/payments/TXN-REPLACE-ME
 ```
 
+Verify payment (no webhook):
+
+```bash
+curl "http://localhost:8085/payments/verify?session_id=cs_test_REPLACE_ME"
+```
+
 List patient payments:
 
 ```bash
@@ -170,6 +189,7 @@ If running full stack behind NGINX gateway:
 
 - `POST /payments`
 - `GET /payments/:transactionId`
+- `GET /payments/verify?session_id=...`
 - `GET /patients/:patientId/payments`
 - `DELETE /payments/:transactionId`
 - `POST /webhook`
@@ -193,3 +213,17 @@ through gateway host, typically: `http://localhost`.
 
 - Start with another port:
   - `PORT=8090 go run main.go`
+
+## Stripe sandbox quick test (no webhook)
+
+1. Ensure `STRIPE_SECRET_KEY` is set in root `.env`.
+2. Start service:
+  - `PORT=8090 go run main.go`
+3. Create payment (`POST /payments`) and copy `checkoutUrl`.
+4. Open `checkoutUrl` in browser and pay with test card:
+  - `4242 4242 4242 4242`
+  - Any future expiry, any CVC, any ZIP
+5. From success URL, copy `session_id` query param.
+6. Verify via:
+  - `GET /payments/verify?session_id=<SESSION_ID>`
+7. Fetch by transaction ID to confirm status changed to `COMPLETED`.

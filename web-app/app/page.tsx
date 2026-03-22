@@ -13,6 +13,7 @@ export default function Home() {
           <a href="/auth" className="rounded bg-black px-4 py-2 text-sm text-white">Auth</a>
           <a href="/doctors" className="rounded border px-4 py-2 text-sm">Browse Doctors</a>
           <a href="/appointments" className="rounded border px-4 py-2 text-sm">Book Appointment</a>
+          <a href="/payments" className="rounded border px-4 py-2 text-sm">Payments</a>
         </div>
 
         <div className="mt-8 grid gap-4 md:grid-cols-3">

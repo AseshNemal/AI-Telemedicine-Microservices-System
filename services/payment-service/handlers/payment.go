@@ -117,8 +117,8 @@ func (h *Handler) CreatePayment(c *gin.Context) {
 			"provider":  "stripe",
 			"sessionId": stripeSession.ID,
 		},
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

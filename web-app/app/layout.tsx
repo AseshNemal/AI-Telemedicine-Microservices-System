@@ -35,6 +35,7 @@ export default function RootLayout({
               <Link href="/auth">Auth</Link>
               <Link href="/doctors">Doctors</Link>
               <Link href="/appointments">Appointments</Link>
+              <Link href="/payments">Payments</Link>
             </div>
           </nav>
         </header>
