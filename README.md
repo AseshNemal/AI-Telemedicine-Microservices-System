@@ -22,6 +22,23 @@ Install the following before running:
 3. Place Firebase service account JSON at `secrets/firebase-service-account.json`.
 4. (Optional) Use `.env.example` as a reference template.
 
+## Architecture Overview
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    Next.js Web App (3000)                    │
+├──────────────────────────────────────────────────────────────┤
+│                  NGINX API Gateway (80)                      │
+├──────┬──────────┬──────────┬──────────┬────────────────────┤
+│      │          │          │          │                    │
+│ Auth │ Patient  │ Doctor   │Appt      │ Notification       │
+│5001  │  5002    │  8082    │ 8083     │    8084            │
+│Node  │  Node    │   Go     │   Go     │    Go              │
+└──────┴──────────┴──────────┴──────────┴────────────────────┘
+```
+
+The **NGINX API Gateway** provides a single entry point for all microservices. See [api-gateway-nginx/README.md](api-gateway-nginx/README.md) for detailed configuration and deployment options.
+
 ## Project Structure
 
 ```text
@@ -49,6 +66,10 @@ AI Telemedicine Microservices System/
 
 ## Services and Ports
 
+**API Gateway (single entry point):**
+- Gateway -> `80` (access all services via `/api/*`, `/doctors`, `/appointments`, etc.)
+
+**Individual Service Ports (for direct access during development):**
 - Auth Service (Node/Express) -> `5001`
 - Patient Service (Node/Express) -> `5002`
 - Doctor Service -> `8082`
@@ -125,11 +146,18 @@ Node service runtime mapping in Docker/K8s:
 
 Run from the `deployments/` directory:
 
-1. Start all services:
+1. Start all services (with API Gateway):
 	 - `cd deployments`
 	 - `docker compose up --build`
-2. Open frontend:
-	 - `http://localhost:3000`
+2. **All services accessible via API Gateway:**
+	 - Gateway: `http://localhost`
+	 - Auth Service: `http://localhost/api/auth`
+	 - Patient Service: `http://localhost/api/patients`
+	 - Doctor Service: `http://localhost/doctors`
+	 - Appointment Service: `http://localhost/appointments`
+	 - Notifications: `http://localhost/send-email`, `/send-sms`
+	 - Frontend: `http://localhost:3000`
+	 - Swagger Docs: `http://localhost/api-docs`
 3. Stop services:
 	 - `Ctrl + C`
 	 - `docker compose down`
@@ -138,18 +166,33 @@ Run from the `deployments/` directory:
 
 Run from the `deployments` folder:
 
-1. Start all services:
+1. Start all services (with API Gateway):
 	 - `Set-Location .\deployments`
 	 - `docker compose up --build`
-2. Open frontend:
-	 - `http://localhost:3000`
+2. **All services accessible via API Gateway:**
+	 - Gateway: `http://localhost`
+	 - Auth Service: `http://localhost/api/auth`
+	 - Patient Service: `http://localhost/api/patients`
+	 - Doctor Service: `http://localhost/doctors`
+	 - Appointment Service: `http://localhost/appointments`
+	 - Notifications: `http://localhost/send-email`, `/send-sms`
+	 - Frontend: `http://localhost:3000`
+	 - Swagger Docs: `http://localhost/api-docs`
 3. Stop services:
 	 - `Ctrl + C`
 	 - `docker compose down`
 
 ## Health Check (All Platforms)
 
-After startup, verify:
+After startup, verify (via API Gateway):
+
+- `http://localhost/health` (Gateway)
+- `http://localhost/api/auth/health` (Auth Service via gateway)
+- `http://localhost/api/patients/health` (Patient Service via gateway)
+- `http://localhost/doctors` (Doctor Service via gateway)
+- `http://localhost/appointments` (Appointment Service via gateway)
+
+Or direct service checks:
 
 - `http://localhost:5001/health`
 - `http://localhost:5002/health`
@@ -159,20 +202,20 @@ After startup, verify:
 
 ## API Smoke Test (Sample Data)
 
-Register user:
+Register user (via gateway):
 
-- Endpoint: `POST http://localhost:5001/api/auth/register`
+- Endpoint: `POST http://localhost/api/auth/register`
 - Sample payload:
 	- `{"fullName":"Alex","email":"alex@example.com","password":"Pass12345!","role":"PATIENT"}`
 
 Get current user (requires Firebase ID token):
 
-- Endpoint: `GET http://localhost:5001/api/auth/me`
+- Endpoint: `GET http://localhost/api/auth/me`
 - Header: `Authorization: Bearer <firebase_id_token>`
 
-Create appointment:
+Create appointment (via gateway):
 
-- Endpoint: `POST http://localhost:8083/appointments`
+- Endpoint: `POST http://localhost/appointments`
 - Sample payload:
 	- `{"patientId":"patient-001","doctorId":"doc-1","date":"2026-03-10","time":"10:30"}`
 
@@ -220,6 +263,11 @@ It covers:
 
 Minimal manifests are under `deployments/kubernetes/`:
 
+**API Gateway (recommended entry point):**
+- `api-gateway-deployment.yaml`
+- `api-gateway-service.yaml`
+
+**Service Manifests:**
 - `configmap.yaml`
 - `secret.yaml`
 - `auth-deployment.yaml`
@@ -239,12 +287,16 @@ Minimal manifests are under `deployments/kubernetes/`:
 
 Apply with your cluster context:
 
-1. `kubectl apply -f deployments/kubernetes/configmap.yaml`
-2. `kubectl apply -f deployments/kubernetes/secret.yaml`
-3. `kubectl apply -f deployments/kubernetes/auth-deployment.yaml`
-4. `kubectl apply -f deployments/kubernetes/doctor-deployment.yaml`
-5. `kubectl apply -f deployments/kubernetes/appointment-deployment.yaml`
-6. `kubectl apply -f deployments/kubernetes/notification-deployment.yaml`
+1. `kubectl apply -f deployments/kubernetes/api-gateway-deployment.yaml`
+2. `kubectl apply -f deployments/kubernetes/api-gateway-service.yaml`
+3. `kubectl apply -f deployments/kubernetes/configmap.yaml`
+4. `kubectl apply -f deployments/kubernetes/secret.yaml`
+5. `kubectl apply -f deployments/kubernetes/auth-deployment.yaml`
+6. `kubectl apply -f deployments/kubernetes/doctor-deployment.yaml`
+7. `kubectl apply -f deployments/kubernetes/appointment-deployment.yaml`
+8. `kubectl apply -f deployments/kubernetes/notification-deployment.yaml`
+
+All services are automatically accessible through the API Gateway LoadBalancer service.
 
 ## Run a single service (developer mode)
 

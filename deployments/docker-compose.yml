@@ -1,17 +1,80 @@
 services:
-  auth-service:
-    build: ../services/auth-service
+  api-gateway:
+    build: ../api-gateway-nginx
+    container_name: api-gateway-nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - auth-service-node
+      - patient-service-node
+      - doctor-service
+      - appointment-service
+      - notification-service
+    networks:
+      - telemedicine-net
+    restart: unless-stopped
+
+  auth-service-node:
+    build: ../services/auth-service-node
+    container_name: auth-service-node
     env_file:
       - ../.env
     environment:
-      - PORT=8081
+      - AUTH_PORT=5001
+      - NODE_ENV=development
     ports:
-      - "8081:8081"
+      - "5001:5001"
+    depends_on:
+      - mongodb-auth
     networks:
       - telemedicine-net
+    restart: unless-stopped
+
+  patient-service-node:
+    build: ../services/patient-service-node
+    container_name: patient-service-node
+    env_file:
+      - ../.env
+    environment:
+      - AUTH_PORT=5002
+      - NODE_ENV=development
+    ports:
+      - "5002:5002"
+    depends_on:
+      - mongodb-patient
+    networks:
+      - telemedicine-net
+    restart: unless-stopped
+
+  mongodb-auth:
+    image: mongo:7.0
+    container_name: mongodb-auth
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=admin
+      - MONGO_INITDB_DATABASE=auth-db
+    volumes:
+      - auth-db-data:/data/db
+    networks:
+      - telemedicine-net
+    restart: unless-stopped
+
+  mongodb-patient:
+    image: mongo:7.0
+    container_name: mongodb-patient
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=admin
+      - MONGO_INITDB_DATABASE=patient-db
+    volumes:
+      - patient-db-data:/data/db
+    networks:
+      - telemedicine-net
+    restart: unless-stopped
 
   doctor-service:
     build: ../services/doctor-service
+    container_name: doctor-service
     env_file:
       - ../.env
     environment:
@@ -20,47 +83,58 @@ services:
       - "8082:8082"
     networks:
       - telemedicine-net
+    restart: unless-stopped
 
   notification-service:
     build: ../services/notification-service
+    container_name: notification-service
     environment:
       - PORT=8084
     ports:
       - "8084:8084"
     networks:
       - telemedicine-net
+    restart: unless-stopped
 
   appointment-service:
     build: ../services/appointment-service
+    container_name: appointment-service
     env_file:
       - ../.env
     environment:
       - PORT=8083
       - NOTIFICATION_SERVICE_URL=http://notification-service:8084
-    depends_on:
-      - notification-service
     ports:
       - "8083:8083"
+    depends_on:
+      - notification-service
     networks:
       - telemedicine-net
+    restart: unless-stopped
 
   web-app:
     build: ../web-app
+    container_name: web-app
     environment:
-      - AUTH_SERVICE_URL=http://auth-service:8081
-      - DOCTOR_SERVICE_URL=http://doctor-service:8082
-      - APPOINTMENT_SERVICE_URL=http://appointment-service:8083
-      - NEXT_PUBLIC_AUTH_SERVICE_URL=http://localhost:8081
-      - NEXT_PUBLIC_DOCTOR_SERVICE_URL=http://localhost:8082
-      - NEXT_PUBLIC_APPOINTMENT_SERVICE_URL=http://localhost:8083
-    depends_on:
-      - auth-service
-      - doctor-service
-      - appointment-service
+      - AUTH_SERVICE_URL=http://api-gateway-nginx/api/auth
+      - PATIENT_SERVICE_URL=http://api-gateway-nginx/api/patients
+      - DOCTOR_SERVICE_URL=http://api-gateway-nginx/doctors
+      - APPOINTMENT_SERVICE_URL=http://api-gateway-nginx/appointments
+      - NEXT_PUBLIC_AUTH_SERVICE_URL=http://localhost/api/auth
+      - NEXT_PUBLIC_PATIENT_SERVICE_URL=http://localhost/api/patients
+      - NEXT_PUBLIC_DOCTOR_SERVICE_URL=http://localhost/doctors
+      - NEXT_PUBLIC_APPOINTMENT_SERVICE_URL=http://localhost/appointments
     ports:
       - "3000:3000"
+    depends_on:
+      - api-gateway
     networks:
       - telemedicine-net
+    restart: unless-stopped
+
+volumes:
+  auth-db-data:
+  patient-db-data:
 
 networks:
   telemedicine-net:
