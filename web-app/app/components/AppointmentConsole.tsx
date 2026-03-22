@@ -42,16 +42,16 @@ export default function AppointmentConsole({ initialAppointments }: AppointmentC
 
   return (
     <section className="space-y-6">
-      <form onSubmit={onSubmit} className="grid gap-3 rounded border p-4 md:grid-cols-2">
+      <form onSubmit={onSubmit} className="surface-card grid gap-3 md:grid-cols-2">
         <input
-          className="rounded border px-3 py-2 text-sm"
+          className="field-input"
           placeholder="Patient ID"
           value={patientId}
           onChange={(e) => setPatientId(e.target.value)}
           required
         />
         <input
-          className="rounded border px-3 py-2 text-sm"
+          className="field-input"
           placeholder="Doctor ID"
           value={doctorId}
           onChange={(e) => setDoctorId(e.target.value)}
@@ -59,19 +59,19 @@ export default function AppointmentConsole({ initialAppointments }: AppointmentC
         />
         <input
           type="date"
-          className="rounded border px-3 py-2 text-sm"
+          className="field-input"
           value={date}
           onChange={(e) => setDate(e.target.value)}
           required
         />
         <input
           type="time"
-          className="rounded border px-3 py-2 text-sm"
+          className="field-input"
           value={time}
           onChange={(e) => setTime(e.target.value)}
           required
         />
-        <button className="rounded bg-black px-4 py-2 text-sm text-white md:col-span-2" type="submit">
+        <button className="btn-primary md:col-span-2" type="submit">
           Book Appointment
         </button>
       </form>
@@ -86,7 +86,7 @@ export default function AppointmentConsole({ initialAppointments }: AppointmentC
         ) : (
           <ul className="space-y-2">
             {appointments.map((a) => (
-              <li key={a.id} className="rounded border p-3 text-sm">
+              <li key={a.id} className="surface-card text-sm">
                 <strong>{a.id}</strong> | Patient: {a.patientId} | Doctor: {a.doctorId} | {a.date} {a.time} | {a.status}
               </li>
             ))}

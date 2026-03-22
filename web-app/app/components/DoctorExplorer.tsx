@@ -28,21 +28,21 @@ export default function DoctorExplorer() {
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap gap-2">
+      <div className="surface-card flex flex-wrap gap-2">
         <input
-          className="rounded border px-3 py-2 text-sm"
+          className="field-input"
           placeholder="Filter by specialty (e.g. Cardiology)"
           value={specialty}
           onChange={(e) => setSpecialty(e.target.value)}
         />
         <button
-          className="rounded bg-black px-4 py-2 text-sm text-white"
+          className="btn-primary"
           onClick={() => loadDoctors(specialty)}
         >
           Search
         </button>
         <button
-          className="rounded border px-4 py-2 text-sm"
+          className="btn-secondary"
           onClick={() => {
             setSpecialty("");
             loadDoctors();
@@ -58,7 +58,7 @@ export default function DoctorExplorer() {
       {!loading && !error && (
         <div className="grid gap-3 md:grid-cols-2">
           {doctors.map((doctor) => (
-            <article key={doctor.id} className="rounded border p-4">
+            <article key={doctor.id} className="surface-card">
               <h3 className="font-semibold">{doctor.name}</h3>
               <p className="text-sm text-neutral-600">{doctor.specialty}</p>
               <p className="text-sm">{doctor.hospital}</p>

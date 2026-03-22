@@ -2,7 +2,7 @@
 
 Cloud-native distributed microservices starter for telemedicine use cases (patient, doctor, admin) using a hybrid backend stack:
 - Node.js + Express + MongoDB (MERN-style services): `auth-service-node`, `patient-service-node`
-- Go + Gin services: `doctor-service`, `appointment-service`, `notification-service`
+- Go + Gin services: `doctor-service`, `appointment-service`, `notification-service`, `payment-service`
 
 Also includes Docker, Docker Compose, Kubernetes manifests, and a Next.js frontend.
 
@@ -29,12 +29,12 @@ Install the following before running:
 │                    Next.js Web App (3000)                    │
 ├──────────────────────────────────────────────────────────────┤
 │                  NGINX API Gateway (80)                      │
-├──────┬──────────┬──────────┬──────────┬────────────────────┤
-│      │          │          │          │                    │
-│ Auth │ Patient  │ Doctor   │Appt      │ Notification       │
-│5001  │  5002    │  8082    │ 8083     │    8084            │
-│Node  │  Node    │   Go     │   Go     │    Go              │
-└──────┴──────────┴──────────┴──────────┴────────────────────┘
+├──────┬──────────┬──────────┬──────────┬────────┬────────────┤
+│      │          │          │          │        │            │
+│ Auth │ Patient  │ Doctor   │Appt      │ Notify │  Payment   │
+│5001  │  5002    │  8082    │ 8083     │  8084  │  8085      │
+│Node  │  Node    │   Go     │   Go     │   Go   │    Go      │
+└──────┴──────────┴──────────┴──────────┴────────┴────────────┘
 ```
 
 The **NGINX API Gateway** provides a single entry point for all microservices. See [api-gateway-nginx/README.md](api-gateway-nginx/README.md) for detailed configuration and deployment options.
@@ -46,15 +46,10 @@ AI Telemedicine Microservices System/
 ├── services/
 │   ├── auth-service-node/
 │   ├── patient-service-node/
-│   ├── auth-service/
-│   │   ├── main.go
-│   │   ├── database/
-│   │   ├── handlers/
-│   │   ├── models/
-│   │   └── routes/
 │   ├── doctor-service/
 │   ├── appointment-service/
-│   └── notification-service/
+│   ├── notification-service/
+│   └── payment-service/
 ├── web-app/
 ├── deployments/
 │   ├── docker-compose.yml
@@ -67,7 +62,7 @@ AI Telemedicine Microservices System/
 ## Services and Ports
 
 **API Gateway (single entry point):**
-- Gateway -> `80` (access all services via `/api/*`, `/doctors`, `/appointments`, etc.)
+- Gateway -> `80` (access all services via `/api/*`, `/doctors`, `/appointments`, `/payments`, etc.)
 
 **Individual Service Ports (for direct access during development):**
 - Auth Service (Node/Express) -> `5001`
@@ -75,6 +70,7 @@ AI Telemedicine Microservices System/
 - Doctor Service -> `8082`
 - Appointment Service -> `8083`
 - Notification Service -> `8084`
+- Payment Service -> `8085`
 - Next.js Frontend -> `3000`
 
 ## API Endpoints
@@ -114,6 +110,14 @@ AI Telemedicine Microservices System/
 - `POST /send-sms`
 - `GET /health`
 
+### Payment Service
+- `POST /payments` (Create payment)
+- `GET /payments/:transactionId` (Get payment by transaction ID)
+- `GET /patients/:patientId/payments` (Get all patient payments)
+- `DELETE /payments/:transactionId` (Cancel payment)
+- `POST /webhook` (Payment provider webhook)
+- `GET /health` (Health check)
+
 ## Environment Variables
 
 Use your current `.env` for local runtime and `.env.example` as template.
@@ -137,6 +141,7 @@ Required:
 	- `NEXT_PUBLIC_PATIENT_SERVICE_URL`
 	- `NEXT_PUBLIC_DOCTOR_SERVICE_URL`
 	- `NEXT_PUBLIC_APPOINTMENT_SERVICE_URL`
+	- `NEXT_PUBLIC_PAYMENT_SERVICE_URL`
 
 Node service runtime mapping in Docker/K8s:
 - Auth service uses `MONGO_URI`, `PATIENT_SERVICE_URL`, `INTERNAL_SERVICE_KEY`, Firebase vars
@@ -155,6 +160,7 @@ Run from the `deployments/` directory:
 	 - Patient Service: `http://localhost/api/patients`
 	 - Doctor Service: `http://localhost/doctors`
 	 - Appointment Service: `http://localhost/appointments`
+	 - Payment Service: `http://localhost/payments`
 	 - Notifications: `http://localhost/send-email`, `/send-sms`
 	 - Frontend: `http://localhost:3000`
 	 - Swagger Docs: `http://localhost/api-docs`
@@ -175,6 +181,7 @@ Run from the `deployments` folder:
 	 - Patient Service: `http://localhost/api/patients`
 	 - Doctor Service: `http://localhost/doctors`
 	 - Appointment Service: `http://localhost/appointments`
+	 - Payment Service: `http://localhost/payments`
 	 - Notifications: `http://localhost/send-email`, `/send-sms`
 	 - Frontend: `http://localhost:3000`
 	 - Swagger Docs: `http://localhost/api-docs`
@@ -199,6 +206,7 @@ Or direct service checks:
 - `http://localhost:8082/health`
 - `http://localhost:8083/health`
 - `http://localhost:8084/health`
+- `http://localhost:8085/health`
 
 ## API Smoke Test (Sample Data)
 
@@ -284,6 +292,8 @@ Minimal manifests are under `deployments/kubernetes/`:
 - `doctor-deployment.yaml`
 - `appointment-deployment.yaml`
 - `notification-deployment.yaml`
+- `payment-deployment.yaml`
+- `mongodb-payment-statefulset.yaml`
 
 Apply with your cluster context:
 
@@ -295,6 +305,8 @@ Apply with your cluster context:
 6. `kubectl apply -f deployments/kubernetes/doctor-deployment.yaml`
 7. `kubectl apply -f deployments/kubernetes/appointment-deployment.yaml`
 8. `kubectl apply -f deployments/kubernetes/notification-deployment.yaml`
+9. `kubectl apply -f deployments/kubernetes/mongodb-payment-statefulset.yaml`
+10. `kubectl apply -f deployments/kubernetes/payment-deployment.yaml`
 
 All services are automatically accessible through the API Gateway LoadBalancer service.
 
@@ -319,6 +331,7 @@ Notes:
 - If a dependent service is required (e.g., appointment -> notification), either run that service locally on its port or change the `NOTIFICATION_SERVICE_URL` to a test endpoint.
 - To run the Doctor service: `cd services/doctor-service && set -o allexport; source ../../.env; set +o allexport && PORT=8082 go run main.go`.
 - To run Notification: use port `8084`.
+- To run Payment service: `cd services/payment-service && set -o allexport; source ../../.env; set +o allexport && PORT=8085 DATABASE_URL=mongodb://admin:admin@localhost:27017/payment-db?authSource=admin go run main.go`.
 
 Run Auth Service (Node/Express, Firebase-auth-only):
 
@@ -375,14 +388,23 @@ Working endpoints per service (use the service's host/port when running a single
 	- POST /send-sms
 	- GET /health
 
-## Team workflow suggestion (4 members)
+- Payment Service (http://localhost:8085)
+	- POST /payments
+	- GET /payments/:transactionId
+	- GET /patients/:patientId/payments
+	- DELETE /payments/:transactionId
+	- POST /webhook
+	- GET /health
 
-This repo maps naturally to a 4-person team — assign one service to each member for fast parallel development:
+## Team workflow suggestion (5 members)
 
-- Member A: `auth-service` — auth endpoints, token middleware, user lifecycle
-- Member B: `doctor-service` — doctor CRUD and search
-- Member C: `appointment-service` — booking flow, notifications, appointment history
-- Member D: `notification-service` — email/SMS integrations and templates
+This repo maps naturally to a 5-person team — assign one service to each member for fast parallel development:
+
+- Member A: `auth-service-node` — auth endpoints, token middleware, user lifecycle
+- Member B: `patient-service-node` — patient profile, records, reports, history
+- Member C: `doctor-service` — doctor CRUD and search
+- Member D: `appointment-service` — booking flow and appointment lifecycle
+- Member E: `notification-service` + `payment-service` — messaging and payment lifecycle integrations
 
 Guidelines for working in parallel:
 

@@ -1,0 +1,142 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+  labels:
+    app: payment-service
+    component: backend
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+        component: backend
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - payment-service
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: payment-service
+        image: payment-service:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8085
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8085"
+        - name: ENV
+          valueFrom:
+            configMapKeyRef:
+              name: payment-service-config
+              key: env
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: payment-service-secrets
+              key: database-url
+        - name: MONGODB_HOST
+          value: "mongodb-payment"
+        - name: MONGODB_PORT
+          value: "27017"
+        - name: MONGODB_USER
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-payment-credentials
+              key: username
+        - name: MONGODB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-payment-credentials
+              key: password
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+  labels:
+    app: payment-service
+    component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: payment-service
+  ports:
+  - name: http
+    port: 8085
+    targetPort: http
+    protocol: TCP
+  sessionAffinity: None
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payment-service-config
+  labels:
+    app: payment-service
+data:
+  env: "production"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: payment-service-secrets
+  labels:
+    app: payment-service
+type: Opaque
+stringData:
+  database-url: "mongodb://admin:admin@mongodb-payment:27017/payment-db?authSource=admin"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mongodb-payment-credentials
+  labels:
+    app: payment-service
+type: Opaque
+stringData:
+  username: "admin"
+  password: "admin"

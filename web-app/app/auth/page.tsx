@@ -49,32 +49,35 @@ export default function AuthPage() {
   }
 
   return (
-    <main className="mx-auto max-w-5xl space-y-6 p-6">
-      <h1 className="text-2xl font-bold">Authentication (Mock Mode)</h1>
-      <p className="text-sm text-neutral-600">
+    <main className="page-shell">
+      <section className="hero-shell">
+        <p className="section-kicker">Access Management</p>
+        <h1 className="section-title">Authentication (Mock Mode)</h1>
+        <p className="section-subtitle">
         Starter auth endpoints for Patient / Doctor / Admin. Firebase can replace this flow later.
-      </p>
+        </p>
+      </section>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <form onSubmit={onRegister} className="space-y-3 rounded border p-4">
+        <form onSubmit={onRegister} className="surface-card space-y-3">
           <h2 className="font-semibold">Register</h2>
-          <input name="name" placeholder="Name" className="w-full rounded border px-3 py-2 text-sm" required />
-          <input name="email" type="email" placeholder="Email" className="w-full rounded border px-3 py-2 text-sm" required />
-          <input name="password" type="password" placeholder="Password" className="w-full rounded border px-3 py-2 text-sm" required />
-          <select name="role" className="w-full rounded border px-3 py-2 text-sm">
+          <input name="name" placeholder="Name" className="field-input w-full" required />
+          <input name="email" type="email" placeholder="Email" className="field-input w-full" required />
+          <input name="password" type="password" placeholder="Password" className="field-input w-full" required />
+          <select name="role" className="field-input w-full">
             <option>Patient</option>
             <option>Doctor</option>
             <option>Admin</option>
           </select>
-          <button className="rounded bg-black px-4 py-2 text-sm text-white" type="submit">Register</button>
+          <button className="btn-primary" type="submit">Register</button>
           {registerMessage && <p className="text-sm text-green-700">{registerMessage}</p>}
         </form>
 
-        <form onSubmit={onLogin} className="space-y-3 rounded border p-4">
+        <form onSubmit={onLogin} className="surface-card space-y-3">
           <h2 className="font-semibold">Login</h2>
-          <input name="email" type="email" placeholder="Email" className="w-full rounded border px-3 py-2 text-sm" required />
-          <input name="password" type="password" placeholder="Password" className="w-full rounded border px-3 py-2 text-sm" required />
-          <button className="rounded bg-black px-4 py-2 text-sm text-white" type="submit">Login</button>
+          <input name="email" type="email" placeholder="Email" className="field-input w-full" required />
+          <input name="password" type="password" placeholder="Password" className="field-input w-full" required />
+          <button className="btn-primary" type="submit">Login</button>
           {loginMessage && <p className="text-sm text-green-700 break-all">{loginMessage}</p>}
         </form>
       </div>
