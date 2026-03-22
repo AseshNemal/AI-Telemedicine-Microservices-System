@@ -369,4 +369,7 @@ Notes:
 
 - Do not commit real secrets in `.env`.
 - If credentials were exposed during development, rotate them immediately.
+- A pre-commit secret scan hook is included at `.githooks/pre-commit`.
+- Enable it once per clone by setting Git hooks path to `.githooks`.
+- Emergency bypass (use sparingly): set `SKIP_SECRET_SCAN=1` for a single commit.
 
