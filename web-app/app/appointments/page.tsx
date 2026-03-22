@@ -5,11 +5,14 @@ export default async function AppointmentsPage() {
   const initialAppointments = await getAppointments().catch(() => []);
 
   return (
-    <main className="mx-auto max-w-5xl space-y-6 p-6">
-      <h1 className="text-2xl font-bold">Appointments</h1>
-      <p className="text-sm text-neutral-600">
+    <main className="page-shell">
+      <section className="hero-shell">
+        <p className="section-kicker">Consultation Flow</p>
+        <h1 className="section-title">Appointments</h1>
+        <p className="section-subtitle">
         Book, view, and manage consultation slots.
-      </p>
+        </p>
+      </section>
       <AppointmentConsole initialAppointments={initialAppointments} />
     </main>
   );

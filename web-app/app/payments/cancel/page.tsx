@@ -2,12 +2,15 @@ import Link from "next/link";
 
 export default function PaymentCancelPage() {
   return (
-    <main className="mx-auto max-w-3xl space-y-6 p-6">
-      <h1 className="text-2xl font-bold">Payment Cancelled</h1>
-      <p className="text-sm text-neutral-600">
+    <main className="page-shell">
+      <section className="hero-shell">
+        <p className="section-kicker">Checkout Result</p>
+        <h1 className="section-title">Payment Cancelled</h1>
+        <p className="section-subtitle">
         You cancelled the Stripe checkout flow. No charge was made.
-      </p>
-      <Link href="/payments" className="inline-block rounded bg-black px-4 py-2 text-sm text-white">
+        </p>
+      </section>
+      <Link href="/payments" className="btn-primary inline-block">
         Try payment again
       </Link>
     </main>

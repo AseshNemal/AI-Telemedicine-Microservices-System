@@ -2,11 +2,14 @@ import DoctorExplorer from "@/app/components/DoctorExplorer";
 
 export default function DoctorsPage() {
   return (
-    <main className="mx-auto max-w-5xl space-y-6 p-6">
-      <h1 className="text-2xl font-bold">Find Doctors</h1>
-      <p className="text-sm text-neutral-600">
+    <main className="page-shell">
+      <section className="hero-shell">
+        <p className="section-kicker">Care Network</p>
+        <h1 className="section-title">Find Doctors</h1>
+        <p className="section-subtitle">
         Browse and filter doctors by specialty.
-      </p>
+        </p>
+      </section>
       <DoctorExplorer />
     </main>
   );

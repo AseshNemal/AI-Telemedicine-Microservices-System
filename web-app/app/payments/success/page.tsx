@@ -35,11 +35,14 @@ function PaymentSuccessContent() {
   }, [sessionId]);
 
   return (
-    <main className="mx-auto max-w-3xl space-y-6 p-6">
-      <h1 className="text-2xl font-bold">Payment Success</h1>
-      <p className="text-sm text-neutral-600">Stripe redirected you back. We are now confirming payment status.</p>
+    <main className="page-shell">
+      <section className="hero-shell">
+        <p className="section-kicker">Checkout Result</p>
+        <h1 className="section-title">Payment Success</h1>
+        <p className="section-subtitle">Stripe redirected you back. We are now confirming payment status.</p>
+      </section>
 
-      <section className="rounded border p-4 text-sm">
+      <section className="surface-card text-sm">
         <p><strong>Session ID:</strong> {sessionId || "N/A"}</p>
         <p className="mt-2"><strong>Message:</strong> {message}</p>
         {status && <p className="mt-2"><strong>Internal Status:</strong> {status}</p>}
@@ -47,8 +50,8 @@ function PaymentSuccessContent() {
       </section>
 
       <div className="flex gap-3">
-        <Link href="/payments" className="rounded bg-black px-4 py-2 text-sm text-white">Back to Payments</Link>
-        <Link href="/appointments" className="rounded border px-4 py-2 text-sm">Appointments</Link>
+        <Link href="/payments" className="btn-primary">Back to Payments</Link>
+        <Link href="/appointments" className="btn-secondary">Appointments</Link>
       </div>
     </main>
   );
@@ -56,7 +59,7 @@ function PaymentSuccessContent() {
 
 export default function PaymentSuccessPage() {
   return (
-    <Suspense fallback={<main className="mx-auto max-w-3xl p-6 text-sm">Loading payment verification...</main>}>
+    <Suspense fallback={<main className="page-shell text-sm">Loading payment verification...</main>}>
       <PaymentSuccessContent />
     </Suspense>
   );

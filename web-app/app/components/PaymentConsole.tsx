@@ -41,23 +41,23 @@ export default function PaymentConsole() {
 
   return (
     <section className="space-y-4">
-      <form onSubmit={onSubmit} className="grid gap-3 rounded border p-4 md:grid-cols-2">
+      <form onSubmit={onSubmit} className="surface-card grid gap-3 md:grid-cols-2">
         <input
-          className="rounded border px-3 py-2 text-sm"
+          className="field-input"
           value={appointmentId}
           onChange={(e) => setAppointmentId(e.target.value)}
           placeholder="Appointment ID"
           required
         />
         <input
-          className="rounded border px-3 py-2 text-sm"
+          className="field-input"
           value={patientId}
           onChange={(e) => setPatientId(e.target.value)}
           placeholder="Patient ID"
           required
         />
         <input
-          className="rounded border px-3 py-2 text-sm"
+          className="field-input"
           value={doctorId}
           onChange={(e) => setDoctorId(e.target.value)}
           placeholder="Doctor ID"
@@ -67,7 +67,7 @@ export default function PaymentConsole() {
           type="number"
           min="1"
           step="0.01"
-          className="rounded border px-3 py-2 text-sm"
+          className="field-input"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           placeholder="Amount"
@@ -75,7 +75,7 @@ export default function PaymentConsole() {
         />
 
         <input
-          className="rounded border px-3 py-2 text-sm md:col-span-2"
+          className="field-input md:col-span-2"
           value={currency}
           onChange={(e) => setCurrency(e.target.value.toUpperCase())}
           placeholder="Currency (USD)"
@@ -83,7 +83,7 @@ export default function PaymentConsole() {
         />
 
         <button
-          className="rounded bg-black px-4 py-2 text-sm text-white disabled:opacity-50 md:col-span-2"
+          className="btn-primary md:col-span-2"
           type="submit"
           disabled={loading}
         >
@@ -91,7 +91,7 @@ export default function PaymentConsole() {
         </button>
       </form>
 
-      <div className="rounded border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+      <div className="surface-card border-blue-200 bg-blue-50 text-sm text-blue-900">
         <p className="font-medium">Stripe Sandbox test card</p>
         <p className="mt-1">Card: 4242 4242 4242 4242 | Exp: any future date | CVC: any 3 digits</p>
       </div>

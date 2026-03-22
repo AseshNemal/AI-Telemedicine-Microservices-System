@@ -28,14 +28,17 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <header className="border-b bg-white/70 backdrop-blur">
-          <nav className="mx-auto flex max-w-6xl items-center justify-between p-4 text-sm">
-            <Link href="/" className="font-semibold">Telemedicine</Link>
-            <div className="flex gap-4">
-              <Link href="/auth">Auth</Link>
-              <Link href="/doctors">Doctors</Link>
-              <Link href="/appointments">Appointments</Link>
-              <Link href="/payments">Payments</Link>
+        <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl">
+          <nav className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 md:px-8">
+            <Link href="/" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm">
+              <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+              Telemedicine
+            </Link>
+            <div className="flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-sm">
+              <Link href="/auth" className="rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Auth</Link>
+              <Link href="/doctors" className="rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Doctors</Link>
+              <Link href="/appointments" className="rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Appointments</Link>
+              <Link href="/payments" className="rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Payments</Link>
             </div>
           </nav>
         </header>
