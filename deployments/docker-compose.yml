@@ -10,6 +10,7 @@ services:
       - doctor-service
       - appointment-service
       - notification-service
+      - payment-service
     networks:
       - telemedicine-net
     restart: unless-stopped
@@ -112,6 +113,35 @@ services:
       - telemedicine-net
     restart: unless-stopped
 
+  payment-service:
+    build: ../services/payment-service
+    container_name: payment-service
+    env_file:
+      - ../.env
+    environment:
+      - PORT=8085
+      - DATABASE_URL=mongodb://admin:admin@mongodb-payment:27017/payment-db?authSource=admin
+    ports:
+      - "8085:8085"
+    depends_on:
+      - mongodb-payment
+    networks:
+      - telemedicine-net
+    restart: unless-stopped
+
+  mongodb-payment:
+    image: mongo:7.0
+    container_name: mongodb-payment
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=admin
+      - MONGO_INITDB_DATABASE=payment-db
+    volumes:
+      - payment-db-data:/data/db
+    networks:
+      - telemedicine-net
+    restart: unless-stopped
+
   web-app:
     build: ../web-app
     container_name: web-app
@@ -120,10 +150,12 @@ services:
       - PATIENT_SERVICE_URL=http://api-gateway-nginx/api/patients
       - DOCTOR_SERVICE_URL=http://api-gateway-nginx/doctors
       - APPOINTMENT_SERVICE_URL=http://api-gateway-nginx/appointments
+      - PAYMENT_SERVICE_URL=http://api-gateway-nginx/payments
       - NEXT_PUBLIC_AUTH_SERVICE_URL=http://localhost/api/auth
       - NEXT_PUBLIC_PATIENT_SERVICE_URL=http://localhost/api/patients
       - NEXT_PUBLIC_DOCTOR_SERVICE_URL=http://localhost/doctors
       - NEXT_PUBLIC_APPOINTMENT_SERVICE_URL=http://localhost/appointments
+      - NEXT_PUBLIC_PAYMENT_SERVICE_URL=http://localhost/payments
     ports:
       - "3000:3000"
     depends_on:
@@ -135,6 +167,7 @@ services:
 volumes:
   auth-db-data:
   patient-db-data:
+  payment-db-data:
 
 networks:
   telemedicine-net:
