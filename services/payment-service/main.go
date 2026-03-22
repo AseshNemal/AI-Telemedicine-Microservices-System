@@ -9,9 +9,14 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Best-effort local .env loading (safe no-op in Docker/K8s where envs are injected)
+	// Overload is used so empty shell vars don't block values from .env during local runs.
+	_ = godotenv.Overload(".env", "../.env", "../../.env")
+
 	// Load environment
 	port := os.Getenv("PORT")
 	if port == "" {

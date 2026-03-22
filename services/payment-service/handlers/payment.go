@@ -1,15 +1,23 @@
 package handlers
 
 import (
+	"bufio"
 	"context"
+	"fmt"
 	"log"
+	"math"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"payment-service/models"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/stripe/stripe-go/v81"
+	"github.com/stripe/stripe-go/v81/checkout/session"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -41,18 +49,74 @@ func (h *Handler) CreatePayment(c *gin.Context) {
 
 	// Generate unique transaction ID
 	transactionID := "TXN-" + uuid.New().String()
-	checkoutURL := "https://sandbox-payment.com/checkout/" + transactionID
+
+	stripeSecret := resolveStripeSecretKey()
+	if stripeSecret == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "STRIPE_SECRET_KEY is not configured"})
+		return
+	}
+
+	stripe.Key = stripeSecret
+
+	currency := strings.ToLower(strings.TrimSpace(req.Currency))
+	if currency == "" {
+		currency = "usd"
+	}
+
+	frontendBaseURL := strings.TrimSpace(os.Getenv("FRONTEND_BASE_URL"))
+	if frontendBaseURL == "" {
+		frontendBaseURL = "http://localhost:3000"
+	}
+
+	stripeParams := &stripe.CheckoutSessionParams{
+		Mode:               stripe.String(string(stripe.CheckoutSessionModePayment)),
+		PaymentMethodTypes: stripe.StringSlice([]string{"card"}),
+		LineItems: []*stripe.CheckoutSessionLineItemParams{
+			{
+				PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
+					Currency: stripe.String(currency),
+					ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
+						Name: stripe.String("Telemedicine Appointment Payment"),
+					},
+					UnitAmount: stripe.Int64(int64(math.Round(req.Amount * 100))),
+				},
+				Quantity: stripe.Int64(1),
+			},
+		},
+		SuccessURL: stripe.String(frontendBaseURL + "/payments/success?session_id={CHECKOUT_SESSION_ID}"),
+		CancelURL:  stripe.String(frontendBaseURL + "/payments/cancel"),
+		Metadata: map[string]string{
+			"transactionId": transactionID,
+			"appointmentId": req.AppointmentID,
+			"patientId":     req.PatientID,
+			"doctorId":      req.DoctorID,
+		},
+	}
+
+	stripeSession, err := session.New(stripeParams)
+	if err != nil {
+		log.Printf("failed to create stripe checkout session: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create stripe checkout session"})
+		return
+	}
+
+	checkoutURL := stripeSession.URL
 
 	payment := models.Payment{
 		AppointmentID: req.AppointmentID,
 		PatientID:     req.PatientID,
 		DoctorID:      req.DoctorID,
 		Amount:        req.Amount,
-		Currency:      req.Currency,
+		Currency:      strings.ToUpper(currency),
 		Status:        models.PaymentPending,
 		PaymentMethod: req.PaymentMethod,
 		TransactionID: transactionID,
 		CheckoutURL:   checkoutURL,
+		ProviderID:    stripeSession.ID,
+		ProviderResponse: map[string]interface{}{
+			"provider":  "stripe",
+			"sessionId": stripeSession.ID,
+		},
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
@@ -68,15 +132,129 @@ func (h *Handler) CreatePayment(c *gin.Context) {
 	}
 
 	response := models.PaymentResponse{
-		ID:          result.InsertedID.(interface{}).(string),
+		ID:          fmt.Sprint(result.InsertedID),
 		Status:      string(models.PaymentPending),
 		CheckoutURL: checkoutURL,
 		Amount:      req.Amount,
-		Currency:    req.Currency,
+		Currency:    strings.ToUpper(currency),
 		CreatedAt:   time.Now(),
 	}
 
 	c.JSON(http.StatusCreated, response)
+}
+
+// VerifyPaymentNoWebhook verifies Stripe checkout session and updates payment status
+func (h *Handler) VerifyPaymentNoWebhook(c *gin.Context) {
+	sessionID := strings.TrimSpace(c.Query("session_id"))
+	if sessionID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "session_id query parameter is required"})
+		return
+	}
+
+	stripeSecret := resolveStripeSecretKey()
+	if stripeSecret == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "STRIPE_SECRET_KEY is not configured"})
+		return
+	}
+
+	stripe.Key = stripeSecret
+
+	stripeSession, err := session.Get(sessionID, nil)
+	if err != nil {
+		log.Printf("failed to retrieve stripe session %s: %v", sessionID, err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid session_id"})
+		return
+	}
+
+	newStatus := models.PaymentPending
+	if stripeSession.PaymentStatus == stripe.CheckoutSessionPaymentStatusPaid {
+		newStatus = models.PaymentCompleted
+	} else if stripeSession.Status == stripe.CheckoutSessionStatusExpired {
+		newStatus = models.PaymentFailed
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	updateData := bson.M{
+		"status":    newStatus,
+		"updatedAt": time.Now(),
+		"providerResponse": bson.M{
+			"provider":      "stripe",
+			"sessionId":     stripeSession.ID,
+			"paymentStatus": stripeSession.PaymentStatus,
+			"sessionStatus": stripeSession.Status,
+		},
+	}
+
+	if newStatus == models.PaymentCompleted {
+		now := time.Now()
+		updateData["completedAt"] = &now
+	}
+
+	result, err := h.db.Collection("payments").UpdateOne(
+		ctx,
+		bson.M{"providerId": stripeSession.ID},
+		bson.M{"$set": updateData},
+	)
+	if err != nil {
+		log.Printf("failed to update payment status from stripe session: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update payment status"})
+		return
+	}
+
+	if result.MatchedCount == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "payment not found for given session_id"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":       "payment verification completed",
+		"sessionId":     stripeSession.ID,
+		"paymentStatus": stripeSession.PaymentStatus,
+		"status":        newStatus,
+	})
+}
+
+func resolveStripeSecretKey() string {
+	if v := strings.TrimSpace(os.Getenv("STRIPE_SECRET_KEY")); v != "" {
+		return v
+	}
+
+	return findEnvValue("STRIPE_SECRET_KEY", ".env", "../.env", "../../.env")
+}
+
+func findEnvValue(key string, paths ...string) string {
+	for _, p := range paths {
+		if value, ok := readEnvValueFromFile(key, p); ok {
+			return value
+		}
+	}
+	return ""
+}
+
+func readEnvValueFromFile(key, path string) (string, bool) {
+	file, err := os.Open(filepath.Clean(path))
+	if err != nil {
+		return "", false
+	}
+	defer file.Close()
+
+	prefix := key + "="
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, prefix) {
+			value := strings.TrimSpace(strings.TrimPrefix(line, prefix))
+			value = strings.Trim(value, `"'`)
+			return value, true
+		}
+	}
+
+	return "", false
 }
 
 // GetPayment retrieves a payment by transaction ID

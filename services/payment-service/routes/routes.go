@@ -10,6 +10,7 @@ import (
 func RegisterRoutes(r *gin.Engine, h *handlers.Handler) {
 	// Payment endpoints
 	r.POST("/payments", h.CreatePayment)
+	r.GET("/payments/verify", h.VerifyPaymentNoWebhook)
 	r.GET("/payments/:transactionId", h.GetPayment)
 	r.GET("/patients/:patientId/payments", h.GetPaymentsByPatient)
 	r.DELETE("/payments/:transactionId", h.CancelPayment)

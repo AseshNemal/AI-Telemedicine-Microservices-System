@@ -46,15 +46,10 @@ AI Telemedicine Microservices System/
 ├── services/
 │   ├── auth-service-node/
 │   ├── patient-service-node/
-│   ├── auth-service/
-│   │   ├── main.go
-│   │   ├── database/
-│   │   ├── handlers/
-│   │   ├── models/
-│   │   └── routes/
 │   ├── doctor-service/
 │   ├── appointment-service/
-│   └── notification-service/
+│   ├── notification-service/
+│   └── payment-service/
 ├── web-app/
 ├── deployments/
 │   ├── docker-compose.yml
@@ -146,6 +141,7 @@ Required:
 	- `NEXT_PUBLIC_PATIENT_SERVICE_URL`
 	- `NEXT_PUBLIC_DOCTOR_SERVICE_URL`
 	- `NEXT_PUBLIC_APPOINTMENT_SERVICE_URL`
+	- `NEXT_PUBLIC_PAYMENT_SERVICE_URL`
 
 Node service runtime mapping in Docker/K8s:
 - Auth service uses `MONGO_URI`, `PATIENT_SERVICE_URL`, `INTERNAL_SERVICE_KEY`, Firebase vars
@@ -309,6 +305,8 @@ Apply with your cluster context:
 6. `kubectl apply -f deployments/kubernetes/doctor-deployment.yaml`
 7. `kubectl apply -f deployments/kubernetes/appointment-deployment.yaml`
 8. `kubectl apply -f deployments/kubernetes/notification-deployment.yaml`
+9. `kubectl apply -f deployments/kubernetes/mongodb-payment-statefulset.yaml`
+10. `kubectl apply -f deployments/kubernetes/payment-deployment.yaml`
 
 All services are automatically accessible through the API Gateway LoadBalancer service.
 
@@ -333,6 +331,7 @@ Notes:
 - If a dependent service is required (e.g., appointment -> notification), either run that service locally on its port or change the `NOTIFICATION_SERVICE_URL` to a test endpoint.
 - To run the Doctor service: `cd services/doctor-service && set -o allexport; source ../../.env; set +o allexport && PORT=8082 go run main.go`.
 - To run Notification: use port `8084`.
+- To run Payment service: `cd services/payment-service && set -o allexport; source ../../.env; set +o allexport && PORT=8085 DATABASE_URL=mongodb://admin:admin@localhost:27017/payment-db?authSource=admin go run main.go`.
 
 Run Auth Service (Node/Express, Firebase-auth-only):
 
@@ -389,14 +388,23 @@ Working endpoints per service (use the service's host/port when running a single
 	- POST /send-sms
 	- GET /health
 
-## Team workflow suggestion (4 members)
+- Payment Service (http://localhost:8085)
+	- POST /payments
+	- GET /payments/:transactionId
+	- GET /patients/:patientId/payments
+	- DELETE /payments/:transactionId
+	- POST /webhook
+	- GET /health
 
-This repo maps naturally to a 4-person team — assign one service to each member for fast parallel development:
+## Team workflow suggestion (5 members)
 
-- Member A: `auth-service` — auth endpoints, token middleware, user lifecycle
-- Member B: `doctor-service` — doctor CRUD and search
-- Member C: `appointment-service` — booking flow, notifications, appointment history
-- Member D: `notification-service` — email/SMS integrations and templates
+This repo maps naturally to a 5-person team — assign one service to each member for fast parallel development:
+
+- Member A: `auth-service-node` — auth endpoints, token middleware, user lifecycle
+- Member B: `patient-service-node` — patient profile, records, reports, history
+- Member C: `doctor-service` — doctor CRUD and search
+- Member D: `appointment-service` — booking flow and appointment lifecycle
+- Member E: `notification-service` + `payment-service` — messaging and payment lifecycle integrations
 
 Guidelines for working in parallel:
 
