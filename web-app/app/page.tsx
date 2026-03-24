@@ -14,6 +14,7 @@ export default function Home() {
           <a href="/doctors" className="btn-secondary">Browse Doctors</a>
           <a href="/appointments" className="btn-secondary">Book Appointment</a>
           <a href="/payments" className="btn-secondary">Payments</a>
+          <a href="/symptoms" className="btn-secondary">Symptom Assistant</a>
         </div>
 
         <div className="mt-8 grid gap-4 md:grid-cols-3">

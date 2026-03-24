@@ -5,6 +5,7 @@ declare namespace NodeJS {
     NEXT_PUBLIC_DOCTOR_SERVICE_URL?: string;
     NEXT_PUBLIC_APPOINTMENT_SERVICE_URL?: string;
     NEXT_PUBLIC_PAYMENT_SERVICE_URL?: string;
+    NEXT_PUBLIC_SYMPTOM_SERVICE_URL?: string;
     NEXT_PUBLIC_STRIPE_PUBLIC_KEY?: string;
   }
 }
