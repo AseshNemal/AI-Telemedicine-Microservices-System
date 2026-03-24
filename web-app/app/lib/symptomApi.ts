@@ -48,7 +48,7 @@ export async function chatSymptoms(
 async function safeMessage(res: Response): Promise<string | null> {
   try {
     const body = await res.json();
-    return body.error ?? body.message ?? body.details ?? null;
+    return body.details ?? body.error ?? body.message ?? null;
   } catch {
     return null;
   }
