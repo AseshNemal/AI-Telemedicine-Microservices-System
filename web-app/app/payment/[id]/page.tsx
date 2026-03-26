@@ -9,7 +9,7 @@ export default async function PaymentPage({ params }: PaymentPageProps) {
   const { id } = await params;
 
   return (
-    <Suspense fallback={<main className="mx-auto max-w-6xl p-6 md:p-10">Loading payment experience...</main>}>
+    <Suspense fallback={<main className="mx-auto max-w-6xl p-6 md:p-10">Loading payment details...</main>}>
       <PaymentPageClient paymentId={id} />
     </Suspense>
   );

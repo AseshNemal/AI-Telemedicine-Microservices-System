@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f4f8fb;
+  --background: #f2f7fb;
   --foreground: #0f172a;
 }
 
@@ -14,8 +14,8 @@
 
 body {
   background:
-    radial-gradient(1200px 500px at 10% -10%, #dff4ee 0%, transparent 60%),
-    radial-gradient(900px 400px at 95% -5%, #e8f3ff 0%, transparent 60%),
+    radial-gradient(1200px 540px at 8% -10%, #ddf4ef 0%, transparent 60%),
+    radial-gradient(900px 420px at 95% -5%, #e5f1ff 0%, transparent 60%),
     var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
@@ -27,7 +27,7 @@ body {
   }
 
   .hero-shell {
-    @apply rounded-[28px] border border-slate-200/80 bg-gradient-to-br from-emerald-50 via-white to-cyan-50 p-7 shadow-sm md:p-10;
+    @apply rounded-[30px] border border-slate-200/80 bg-gradient-to-br from-emerald-50 via-white to-cyan-50 p-7 shadow-sm md:p-10;
   }
 
   .section-kicker {
@@ -43,7 +43,7 @@ body {
   }
 
   .surface-card {
-    @apply rounded-3xl border border-slate-200/80 bg-white/95 p-6 shadow-[0_8px_30px_rgba(15,23,42,0.06)] md:p-7;
+    @apply rounded-3xl border border-slate-200/80 bg-white/95 p-6 shadow-[0_10px_35px_rgba(15,23,42,0.07)] md:p-7;
   }
 
   .field-input {
@@ -51,7 +51,7 @@ body {
   }
 
   .btn-primary {
-    @apply rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply rounded-xl bg-cyan-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-cyan-700 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .btn-secondary {

@@ -194,8 +194,11 @@ export default function SymptomConsole() {
     return (
       <section className="mx-auto max-w-3xl pt-6">
         <div className="surface-card rounded-[32px] border-slate-200/90 bg-white/90 p-8 text-center md:p-12">
-          <p className="section-kicker">AI TRIAGE</p>
-          <h2 className="mt-3 text-4xl font-bold text-slate-900">I am Symptom Assistant your AI Doctor</h2>
+          <p className="section-kicker">AI triage</p>
+          <h2 className="mt-3 text-4xl font-bold text-slate-900">Your virtual symptom assistant</h2>
+          <p className="mt-3 text-sm text-slate-600">
+            Share your symptoms to begin a guided, adaptive assessment.
+          </p>
 
           <form
             onSubmit={onSubmit}
@@ -212,7 +215,7 @@ export default function SymptomConsole() {
             </button>
           </form>
 
-          <p className="mt-4 text-xs font-medium text-slate-500">SUGGESTED FOR YOU</p>
+          <p className="mt-4 text-xs font-medium uppercase tracking-[0.16em] text-slate-500">Suggested topics</p>
           <div className="mx-auto mt-3 flex max-w-2xl flex-wrap justify-center gap-2">
             {suggestedTopics.map((topic) => (
               <button
@@ -233,7 +236,7 @@ export default function SymptomConsole() {
         {showIntake && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
             <form onSubmit={onContinueIntake} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
-              <h3 className="text-xl font-semibold text-slate-800">Please enter your age, gender and country.</h3>
+              <h3 className="text-xl font-semibold text-slate-800">Before we begin, tell us a bit about you.</h3>
               <div className="mt-4 space-y-3">
                 <div>
                   <label className="mb-1 block text-sm text-slate-600">Age</label>
@@ -356,7 +359,8 @@ export default function SymptomConsole() {
 
       <div className="grid gap-4 md:grid-cols-2">
         <div className="surface-card space-y-3">
-          <h3 className="text-sm font-semibold text-slate-900">Current context</h3>
+          <h3 className="text-sm font-semibold text-slate-900">Assessment details</h3>
+          <p className="text-xs text-slate-500">Update any field to improve symptom interpretation.</p>
           <div className="grid grid-cols-1 gap-2">
             <input className="field-input" value={type} onChange={(e) => setType(e.target.value)} placeholder="Symptom type" />
             <input className="field-input" value={duration} onChange={(e) => setDuration(e.target.value)} placeholder="Duration" />
