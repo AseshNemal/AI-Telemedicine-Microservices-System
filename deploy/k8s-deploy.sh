@@ -21,8 +21,8 @@ fi
 K8S_ENV_FILE=$(mktemp)
 trap 'rm -f "$K8S_ENV_FILE"' EXIT
 
-# Extract only DATABASE_URL into a temp env file (safe: we don't commit this)
-grep '^DATABASE_URL=' "$ENV_FILE" > "$K8S_ENV_FILE" || true
+# Extract secret keys into a temp env file (safe: we don't commit this)
+grep -E '^(DATABASE_URL|LIVEKIT_API_KEY|LIVEKIT_API_SECRET)=' "$ENV_FILE" > "$K8S_ENV_FILE" || true
 
 if [ -s "$K8S_ENV_FILE" ]; then
   echo "Creating/updating Kubernetes secret 'telemedicine-secrets' from .env..."
@@ -30,7 +30,7 @@ if [ -s "$K8S_ENV_FILE" ]; then
     --from-env-file="$K8S_ENV_FILE" \
     --namespace=default --dry-run=client -o yaml | kubectl apply -f -
 else
-  echo "WARNING: DATABASE_URL not found in $ENV_FILE; skipping secret creation." >&2
+  echo "WARNING: no matching secret keys found in $ENV_FILE; skipping secret creation." >&2
 fi
 
 echo "Applying Kubernetes manifests in deployments/kubernetes..."
@@ -41,6 +41,7 @@ kubectl rollout restart deployment/appointment-service || true
 kubectl rollout restart deployment/doctor-service || true
 kubectl rollout restart deployment/notification-service || true
 kubectl rollout restart deployment/auth-service || true
+kubectl rollout restart deployment/telemedicine-service || true
 
 echo "Done. Current pod status:"
 kubectl get pods -o wide
