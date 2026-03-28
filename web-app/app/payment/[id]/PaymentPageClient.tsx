@@ -141,7 +141,7 @@ export default function PaymentPageClient({ paymentId }: PaymentPageClientProps)
         <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Telemedicine Checkout</p>
         <h1 className="mt-3 text-3xl font-bold leading-tight text-slate-900 md:text-5xl">Payment for Reference: {paymentId}</h1>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 md:text-base">
-          Review payment details, then continue to Stripe secure checkout. This page supports status feedback for success and cancel return states.
+          Review the billing details below, continue to secure Stripe checkout, and return for instant payment status updates.
         </p>
       </section>
 

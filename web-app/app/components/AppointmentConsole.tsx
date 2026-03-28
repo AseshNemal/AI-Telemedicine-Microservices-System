@@ -8,8 +8,8 @@ type AppointmentConsoleProps = {
 };
 
 export default function AppointmentConsole({ initialAppointments }: AppointmentConsoleProps) {
-  const [patientId, setPatientId] = useState("patient-001");
-  const [doctorId, setDoctorId] = useState("doc-1");
+  const [patientId, setPatientId] = useState("");
+  const [doctorId, setDoctorId] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [appointments, setAppointments] = useState<Appointment[]>(initialAppointments);
@@ -42,52 +42,62 @@ export default function AppointmentConsole({ initialAppointments }: AppointmentC
 
   return (
     <section className="space-y-6">
-      <form onSubmit={onSubmit} className="surface-card grid gap-3 md:grid-cols-2">
-        <input
-          className="field-input"
-          placeholder="Patient ID"
-          value={patientId}
-          onChange={(e) => setPatientId(e.target.value)}
-          required
-        />
-        <input
-          className="field-input"
-          placeholder="Doctor ID"
-          value={doctorId}
-          onChange={(e) => setDoctorId(e.target.value)}
-          required
-        />
-        <input
-          type="date"
-          className="field-input"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          required
-        />
-        <input
-          type="time"
-          className="field-input"
-          value={time}
-          onChange={(e) => setTime(e.target.value)}
-          required
-        />
-        <button className="btn-primary md:col-span-2" type="submit">
-          Book Appointment
-        </button>
+      <form onSubmit={onSubmit} className="surface-card">
+        <p className="section-kicker">Book appointment</p>
+        <h2 className="mt-2 text-2xl font-bold text-slate-900">Schedule your consultation</h2>
+        <p className="mt-2 text-sm text-slate-600">Provide patient and doctor details, then select your preferred slot.</p>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <input
+            className="field-input"
+            placeholder="Patient ID (e.g. PAT-1203)"
+            value={patientId}
+            onChange={(e) => setPatientId(e.target.value)}
+            required
+          />
+          <input
+            className="field-input"
+            placeholder="Doctor ID (e.g. DOC-0042)"
+            value={doctorId}
+            onChange={(e) => setDoctorId(e.target.value)}
+            required
+          />
+          <input
+            type="date"
+            className="field-input"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            required
+          />
+          <input
+            type="time"
+            className="field-input"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            required
+          />
+          <button className="btn-primary md:col-span-2" type="submit">
+            Confirm appointment
+          </button>
+        </div>
       </form>
 
       {message && <p className="text-sm text-green-700">{message}</p>}
       {error && <p className="text-sm text-red-700">{error}</p>}
 
       <div className="space-y-2">
-        <h3 className="font-semibold">Appointment History</h3>
+        <h3 className="text-lg font-semibold text-slate-900">Appointment history</h3>
         {appointments.length === 0 ? (
-          <p className="text-sm text-neutral-500">No appointments yet.</p>
+          <p className="surface-card text-sm text-slate-500">No appointments yet. Your confirmed bookings will appear here.</p>
         ) : (
           <ul className="space-y-2">
             {appointments.map((a) => (
-              <li key={a.id} className="surface-card text-sm">
-                <strong>{a.id}</strong> | Patient: {a.patientId} | Doctor: {a.doctorId} | {a.date} {a.time} | {a.status}
+              <li key={a.id} className="surface-card text-sm text-slate-700">
+                <p className="font-semibold text-slate-900">{a.id}</p>
+                <p className="mt-1">Patient: {a.patientId}</p>
+                <p>Doctor: {a.doctorId}</p>
+                <p>Date & Time: {a.date} {a.time}</p>
+                <p className="mt-1 text-xs uppercase tracking-[0.12em] text-slate-500">Status: {a.status}</p>
               </li>
             ))}
           </ul>
