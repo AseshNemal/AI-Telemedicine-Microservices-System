@@ -87,10 +87,10 @@ export async function getAppointments(): Promise<Appointment[]> {
 }
 
 export async function register(payload: {
-  name: string;
+  fullName: string;
   email: string;
   password: string;
-  role: "Patient" | "Doctor" | "Admin";
+  role: "PATIENT" | "DOCTOR" | "ADMIN";
 }) {
   const res = await fetch(`${authBase}/register`, {
     method: "POST",
@@ -116,6 +116,23 @@ export async function login(payload: { email: string; password: string }) {
   if (!res.ok) {
     const message = await safeMessage(res);
     throw new Error(message || `Login failed (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function getMe(idToken: string) {
+  const res = await fetch(`${authBase}/me`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to load profile (${res.status})`);
   }
 
   return res.json();
