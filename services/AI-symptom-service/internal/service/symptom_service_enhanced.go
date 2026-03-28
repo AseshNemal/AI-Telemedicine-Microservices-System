@@ -174,10 +174,94 @@ func buildQuestionReply(ctx model.SymptomContext, phase string) string {
 	}
 }
 
-// buildCompletionReply summarizes the collected data
-func buildCompletionReply(ctx model.SymptomContext) string {
-	return fmt.Sprintf("Thanks for the detailed information about your %s (%s, %s severity, %s). Let me provide my assessment.",
-		ctx.Type, ctx.Duration, ctx.Severity, ctx.Location)
+// buildCompletionReply returns a structured final assessment for deterministic flow.
+func buildCompletionReply(ctx model.SymptomContext, steps *model.NextSteps) string {
+	symptom := strings.TrimSpace(ctx.Type)
+	if symptom == "" {
+		symptom = "symptoms"
+	}
+
+	severity := strings.TrimSpace(ctx.Severity)
+	if severity == "" {
+		severity = "unspecified"
+	}
+
+	location := strings.TrimSpace(ctx.Location)
+	if location == "" {
+		location = "unspecified area"
+	}
+
+	whatHappening := fmt.Sprintf("Your symptoms are most consistent with a likely %s pattern (%s severity, %s).", symptom, severity, location)
+	whyHappening := inferLikelyCause(ctx)
+	whatAvoid := inferWhatToAvoid(ctx)
+
+	risk := "Medium"
+	emergencyText := "No immediate emergency signs are confirmed right now, but continue monitoring."
+	if ctx.RedFlags {
+		risk = "High"
+		emergencyText = "Yes — warning signs are present. Seek urgent in-person medical care now."
+	} else if steps != nil {
+		switch strings.ToLower(strings.TrimSpace(steps.Urgency)) {
+		case "routine":
+			risk = "Low"
+		case "soon":
+			risk = "Medium"
+		case "emergency":
+			risk = "High"
+			emergencyText = "Yes — urgent evaluation is recommended immediately."
+		}
+	}
+
+	whatToDo := "Stay hydrated, rest, and monitor your symptoms."
+	whenSeek := "Seek care promptly if symptoms worsen or new red-flag symptoms appear."
+	if steps != nil {
+		if strings.TrimSpace(steps.MedicalRecommendation) != "" {
+			whatToDo = steps.MedicalRecommendation
+		}
+		if strings.TrimSpace(steps.WhenToSeekCare) != "" {
+			whenSeek = steps.WhenToSeekCare
+		}
+	}
+
+	return strings.Join([]string{
+		"What is likely happening: " + whatHappening,
+		"Why it might be happening: " + whyHappening,
+		"What to do: " + whatToDo,
+		"What to avoid: " + whatAvoid,
+		"When to seek care: " + whenSeek,
+		"Risk level: " + risk + ".",
+		"Emergency: " + emergencyText,
+	}, "\n")
+}
+
+func inferLikelyCause(ctx model.SymptomContext) string {
+	switch strings.ToLower(strings.TrimSpace(ctx.Type)) {
+	case "fever":
+		return "Common causes include viral infections, mild bacterial illness, dehydration, or inflammatory responses."
+	case "headache":
+		return "Common causes include tension, migraine triggers, dehydration, poor sleep, eye strain, or stress."
+	case "cough", "cold", "cough and cold":
+		return "Common causes include upper respiratory viral infection, throat irritation, post-nasal drip, or allergy-related inflammation."
+	case "stomach pain", "abdomen", "abdominal pain":
+		return "Common causes include gastritis, indigestion, viral gastroenteritis, food intolerance, or bowel irritation."
+	default:
+		return "It may be due to a self-limited infection, inflammation, stress-related factors, or another non-emergency condition."
+	}
+}
+
+func inferWhatToAvoid(ctx model.SymptomContext) string {
+	switch strings.ToLower(strings.TrimSpace(ctx.Type)) {
+	case "fever":
+		return "Avoid dehydration, alcohol, overdosing fever medicines, and ignoring persistent high fever or confusion."
+	case "headache":
+		return "Avoid excessive screen strain, sleep deprivation, skipping meals, and overusing painkillers repeatedly."
+	case "cough", "cold", "cough and cold":
+		return "Avoid smoking, dusty/irritant exposure, self-starting antibiotics, and suppressing severe persistent cough without evaluation."
+	case "stomach pain", "abdomen", "abdominal pain":
+		return "Avoid spicy/fatty foods, excess NSAID painkillers on an empty stomach, and delaying care for worsening pain."
+	default:
+		return "Avoid self-medicating aggressively or delaying care if symptoms are worsening or persistent."
+	}
 }
 
 // generateNextStepsSummary creates a detailed summary with medical recommendations
@@ -302,7 +386,7 @@ func updateAdaptiveQuestionFlow(req model.SymptomChatRequest) model.SymptomChatR
 	if nextPhase == model.PhaseComplete {
 		resp.NextQuestion = nil
 		resp.NextSteps = generateNextStepsSummary(ctx)
-		resp.Reply = buildCompletionReply(ctx)
+		resp.Reply = buildCompletionReply(ctx, resp.NextSteps)
 		return resp
 	}
 

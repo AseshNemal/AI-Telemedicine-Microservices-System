@@ -19,3 +19,5 @@ web-app/.next/
 
 # local git hooks folder
 .githooks/*.log
+
+.gocache/
