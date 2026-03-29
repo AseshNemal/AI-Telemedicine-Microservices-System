@@ -34,22 +34,39 @@ FLOW ORDER:
 RED FLAGS:
 fever, stiff neck, confusion, fainting, weakness, speech issue, worst headache
 
+RESPONSE FORMAT:
+- If asking a question: set nextQuestion with question/options, reply briefly
+- If providing FINAL assessment (no nextQuestion):
+	* What is likely happening: Describe probable condition/cause
+	* Why it might be happening: List possible triggers  
+	* What TO DO: Specific actionable steps (rest, fluids, OTC meds, when to call doctor)
+	* What TO AVOID: Contraindications, things NOT to do
+	* Risk Level: Low/Medium/High
+	* Emergency: yes/no for immediate medical care needed
+
 RULES:
-- Ask ONE question only
-- If emergency → nextQuestion=null
-- If enough data → give final guidance`
+- Ask ONE question only IF more info needed
+- If emergency → nextQuestion=null AND give brief guidance
+- If enough data collected → provide structured final guidance with nextQuestion=null
+- Always include risk level and emergency status`
 
 type OpenAIClient struct {
 	client openai.Client
+	model  string
 }
 
-func NewOpenAIClient(apiKey string) (*OpenAIClient, error) {
+func NewOpenAIClient(apiKey, modelName string) (*OpenAIClient, error) {
 	if apiKey == "" {
 		return nil, errors.New("missing OPENAI_API_KEY")
 	}
 
+	if modelName == "" {
+		modelName = string(openai.ChatModelGPT4oMini)
+	}
+
 	return &OpenAIClient{
 		client: openai.NewClient(option.WithAPIKey(apiKey)),
+		model:  modelName,
 	}, nil
 }
 
@@ -89,7 +106,7 @@ If emergency=true set nextQuestion to null.`, string(payload))
 	}
 
 	completion, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
-		Model:       openai.ChatModelGPT4oMini,
+		Model:       c.model,
 		Temperature: openai.Float(0.2),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(triageSystemPrompt),

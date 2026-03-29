@@ -21,12 +21,17 @@ func main() {
 		log.Fatal("OPENAI_API_KEY is required")
 	}
 
+	modelName := os.Getenv("OPENAI_MODEL")
+	if modelName == "" {
+		modelName = "gpt-4o-mini"
+	}
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8091"
 	}
 
-	aiClient, err := ai.NewOpenAIClient(apiKey)
+	aiClient, err := ai.NewOpenAIClient(apiKey, modelName)
 	if err != nil {
 		log.Fatalf("failed to init ai client: %v", err)
 	}

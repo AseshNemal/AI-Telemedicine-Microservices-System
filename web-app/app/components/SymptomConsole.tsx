@@ -4,20 +4,72 @@ import { FormEvent, useMemo, useRef, useState } from "react";
 import { chatSymptoms, SymptomChatResponse } from "@/app/lib/symptomApi";
 
 type ChatMode = "home" | "chat";
+type FlowMode = "idle" | "premade" | "direct";
+
+type SuggestedTopic = {
+  id: string;
+  label: string;
+  emoji: string;
+  seed: string;
+  defaultType: string;
+};
+
+type PremadeQuestion = {
+  id: "duration" | "severity" | "location" | "redFlags";
+  question: string;
+  options: string[];
+};
 
 type ChatItem = {
   id: string;
   role: "user" | "assistant";
   text: string;
   response?: SymptomChatResponse;
+  quickOptions?: string[];
 };
 
-const suggestedTopics = [
-  { label: "Headache", emoji: "🤕", seed: "I have a headache. Can you help me assess my symptoms?" },
-  { label: "Fever or chills", emoji: "🌡️", seed: "I have a fever. Can you help me assess my symptoms?" },
-  { label: "Cough or cold", emoji: "🤧", seed: "I have cough and cold symptoms. Can you help me assess my symptoms?" },
-  { label: "Stomach or digestion", emoji: "🤢", seed: "I have stomach or digestion issues. Can you help me assess my symptoms?" },
-  { label: "Something else", emoji: "💬", seed: "I have symptoms and need a triage assessment." },
+type AssessmentSection = {
+  key: string;
+  title: string;
+  value: string;
+};
+
+const suggestedTopics: SuggestedTopic[] = [
+  {
+    id: "headache",
+    label: "Headache",
+    emoji: "🤕",
+    seed: "I have a headache. Can you help me assess my symptoms?",
+    defaultType: "headache",
+  },
+  {
+    id: "fever",
+    label: "Fever or chills",
+    emoji: "🌡️",
+    seed: "I have a fever. Can you help me assess my symptoms?",
+    defaultType: "fever",
+  },
+  {
+    id: "cough",
+    label: "Cough or cold",
+    emoji: "🤧",
+    seed: "I have cough and cold symptoms. Can you help me assess my symptoms?",
+    defaultType: "cough",
+  },
+  {
+    id: "stomach",
+    label: "Stomach or digestion",
+    emoji: "🤢",
+    seed: "I have stomach or digestion issues. Can you help me assess my symptoms?",
+    defaultType: "stomach pain",
+  },
+  {
+    id: "other",
+    label: "Something else",
+    emoji: "💬",
+    seed: "I have symptoms and need a triage assessment.",
+    defaultType: "symptom",
+  },
 ];
 
 const fallbackQuestionOptions: Array<{ hint: RegExp; options: string[] }> = [
@@ -26,13 +78,17 @@ const fallbackQuestionOptions: Array<{ hint: RegExp; options: string[] }> = [
     options: ["Today", "1–2 days ago", "3–5 days ago", "More than 5 days ago", "Not sure"],
   },
   {
-    hint: /severity|how bad|pain scale/i,
+    hint: /severity|how bad|pain scale|how severe/i,
     options: ["Mild", "Moderate", "Severe"],
   },
 ];
 
+const maxDirectFollowUps = 3;
+
 export default function SymptomConsole() {
   const [mode, setMode] = useState<ChatMode>("home");
+  const [flowMode, setFlowMode] = useState<FlowMode>("idle");
+
   const [message, setMessage] = useState("");
   const [type, setType] = useState("");
   const [duration, setDuration] = useState("");
@@ -49,9 +105,50 @@ export default function SymptomConsole() {
   const [age, setAge] = useState("");
   const [gender, setGender] = useState("");
   const [country, setCountry] = useState("United States");
-  const [pendingSeedMessage, setPendingSeedMessage] = useState("");
+  const [selectedTopic, setSelectedTopic] = useState<SuggestedTopic | null>(null);
+
+  const [premadeQuestionIndex, setPremadeQuestionIndex] = useState(0);
+  const [premadeAnswers, setPremadeAnswers] = useState<Record<string, string>>({});
+  const [directFollowUpsAsked, setDirectFollowUpsAsked] = useState(0);
 
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+
+  const premadeQuestions = useMemo<PremadeQuestion[]>(() => {
+    if (!selectedTopic) return [];
+
+    const locationOptionsByTopic: Record<string, string[]> = {
+      headache: ["Forehead", "One side of head", "Back of head", "Whole head", "Not sure"],
+      fever: ["Whole body", "Head and face", "Chest", "Stomach", "Not sure"],
+      cough: ["Throat", "Chest", "Nose/sinuses", "Whole upper body", "Not sure"],
+      stomach: ["Upper abdomen", "Lower abdomen", "Whole abdomen", "Side/back", "Not sure"],
+      other: ["Head", "Chest", "Abdomen", "Back/limbs", "Multiple areas"],
+    };
+
+    const questions: PremadeQuestion[] = [
+      {
+        id: "duration",
+        question: "How long have you had this symptom?",
+        options: ["Today", "1–2 days ago", "3–5 days ago", "More than 5 days ago", "Not sure"],
+      },
+      {
+        id: "severity",
+        question: "How severe is it right now?",
+        options: ["Mild", "Moderate", "Severe"],
+      },
+      {
+        id: "location",
+        question: "Where do you feel it most?",
+        options: locationOptionsByTopic[selectedTopic.id] ?? locationOptionsByTopic.other,
+      },
+      {
+        id: "redFlags",
+        question: "Any danger signs (breathing trouble, confusion, chest pain, fainting, uncontrolled vomiting)?",
+        options: ["Yes", "No", "Not sure"],
+      },
+    ];
+
+    return questions;
+  }, [selectedTopic]);
 
   const latestAssistant = useMemo(
     () => [...history].reverse().find((item) => item.role === "assistant"),
@@ -71,20 +168,21 @@ export default function SymptomConsole() {
     setLoading(true);
     setError(null);
 
-    const userItem: ChatItem = {
-      id: `${Date.now()}-u`,
-      role: "user",
-      text: trimmed,
-    };
-    setHistory((prev) => [...prev, userItem]);
+    setHistory((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-u`,
+        role: "user",
+        text: trimmed,
+      },
+    ]);
     setMessage("");
 
     try {
-      const selectedTopic = pendingSeedMessage || type;
-      const response = await chatSymptoms({
+      const baseResponse = await chatSymptoms({
         message: trimmed,
         context: {
-          type: selectedTopic || type,
+          type,
           duration,
           severity: normalizedSeverity || severity,
           painType,
@@ -93,24 +191,35 @@ export default function SymptomConsole() {
         },
       });
 
+      let response = enrichResponse(baseResponse);
+
+      if (flowMode === "direct" && response.nextQuestion) {
+        const nextAsked = directFollowUpsAsked + 1;
+        setDirectFollowUpsAsked(nextAsked);
+
+        if (nextAsked >= maxDirectFollowUps) {
+          const finalResponse = await chatSymptoms({
+            message: [
+              "You have reached the follow-up limit. Provide a COMPLETE final triage assessment based on collected information.",
+              "Include: 1) What is likely happening, 2) Why it might be happening, 3) What TO do (recommendations), 4) What TO AVOID (contraindications), 5) Risk level, 6) Emergency status.",
+              "Do not ask additional follow-up questions.",
+            ].join(" "),
+            context: response.collectedData,
+          });
+          response = {
+            ...enrichResponse(finalResponse),
+            nextQuestion: null,
+          };
+        }
+      }
+
       setHistory((prev) => [
         ...prev,
         {
           id: `${Date.now()}-a`,
           role: "assistant",
           text: response.reply,
-          response: {
-            ...response,
-            nextQuestion: response.nextQuestion
-              ? {
-                  ...response.nextQuestion,
-                  options:
-                    response.nextQuestion.options?.length
-                      ? response.nextQuestion.options
-                      : inferOptionsFromQuestion(response.nextQuestion.question),
-                }
-              : null,
-          },
+          response,
         },
       ]);
 
@@ -120,6 +229,7 @@ export default function SymptomConsole() {
       setPainType(response.collectedData.painType ?? painType);
       setLocation(response.collectedData.location ?? location);
       setRedFlags(Boolean(response.collectedData.redFlags));
+
       if (chatScrollRef.current) {
         setTimeout(() => {
           chatScrollRef.current?.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: "smooth" });
@@ -129,23 +239,35 @@ export default function SymptomConsole() {
       setError(err instanceof Error ? err.message : "Failed to analyze symptoms");
     } finally {
       setLoading(false);
-      setPendingSeedMessage("");
     }
   }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!message.trim()) return;
+
+    if (flowMode === "premade" && premadeQuestionIndex < premadeQuestions.length) {
+      await handlePremadeAnswer(message.trim());
+      setMessage("");
+      return;
+    }
+
+    if (flowMode !== "premade") {
+      setFlowMode("direct");
+      if (mode === "home") setDirectFollowUpsAsked(0);
+    }
+
     await sendChatMessage(message);
   }
 
-  function onSuggestedClick(seed: string) {
-    setPendingSeedMessage(seed);
+  function onSuggestedClick(topic: SuggestedTopic) {
+    setSelectedTopic(topic);
     setShowIntake(true);
   }
 
   async function onContinueIntake(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!pendingSeedMessage) return;
+    if (!selectedTopic) return;
 
     const profilePrefix = [
       age.trim() ? `Age ${age.trim()}` : "",
@@ -156,23 +278,168 @@ export default function SymptomConsole() {
       .join(", ");
 
     setShowIntake(false);
+    setMode("chat");
+    setFlowMode("premade");
+    setError(null);
+
+    setType(selectedTopic.defaultType);
+    setDuration("");
+    setSeverity("");
+    setPainType("");
+    setLocation("");
+    setRedFlags(false);
+
+    setPremadeQuestionIndex(0);
+    setPremadeAnswers({});
+    setDirectFollowUpsAsked(0);
 
     const initial =
       profilePrefix.length > 0
-        ? `${pendingSeedMessage} Patient profile: ${profilePrefix}.`
-        : pendingSeedMessage;
+        ? `${selectedTopic.seed} Patient profile: ${profilePrefix}.`
+        : selectedTopic.seed;
 
-    if (!type && pendingSeedMessage) {
-      if (/fever/i.test(pendingSeedMessage)) setType("fever");
-      else if (/headache/i.test(pendingSeedMessage)) setType("headache");
-      else if (/cough|cold/i.test(pendingSeedMessage)) setType("cough");
-      else if (/stomach|digestion/i.test(pendingSeedMessage)) setType("stomach pain");
-    }
+    const firstQuestion = premadeQuestions[0];
 
-    await sendChatMessage(initial);
+    setHistory([
+      {
+        id: `${Date.now()}-intro-user`,
+        role: "user",
+        text: initial,
+      },
+      {
+        id: `${Date.now()}-intro-assistant`,
+        role: "assistant",
+        text: firstQuestion?.question ?? "Let’s begin your symptom assessment.",
+        quickOptions: firstQuestion?.options ?? [],
+      },
+    ]);
   }
 
-  function applyQuickAnswer(value: string) {
+  async function handlePremadeAnswer(answer: string) {
+    if (!selectedTopic) return;
+
+    const currentQuestion = premadeQuestions[premadeQuestionIndex];
+    if (!currentQuestion) return;
+
+    setHistory((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-premade-u`,
+        role: "user",
+        text: answer,
+      },
+    ]);
+
+    const nextAnswers = {
+      ...premadeAnswers,
+      [currentQuestion.id]: answer,
+    };
+    setPremadeAnswers(nextAnswers);
+
+    applyPremadeAnswerToState(currentQuestion.id, answer, {
+      setDuration,
+      setSeverity,
+      setLocation,
+      setRedFlags,
+    });
+
+    const nextIndex = premadeQuestionIndex + 1;
+    setPremadeQuestionIndex(nextIndex);
+
+    if (nextIndex < premadeQuestions.length) {
+      const nextQuestion = premadeQuestions[nextIndex];
+      setHistory((prev) => [
+        ...prev,
+        {
+          id: `${Date.now()}-premade-a`,
+          role: "assistant",
+          text: nextQuestion.question,
+          quickOptions: nextQuestion.options,
+        },
+      ]);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const profile = [
+        age.trim() ? `Age: ${age.trim()}` : "",
+        gender.trim() ? `Gender: ${gender.trim()}` : "",
+        country.trim() ? `Country: ${country.trim()}` : "",
+      ]
+        .filter(Boolean)
+        .join("; ");
+
+      const summaryMessage = [
+        `Primary symptom: ${selectedTopic.label}.`,
+        profile ? `Patient profile: ${profile}.` : "",
+        `Premade answers: duration=${nextAnswers.duration ?? ""}, severity=${nextAnswers.severity ?? ""}, location=${nextAnswers.location ?? ""}, danger-signs=${nextAnswers.redFlags ?? ""}.`,
+        "Provide a COMPLETE triage assessment with the following structure:",
+        "1. WHAT IS LIKELY HAPPENING: Explain the possible condition(s) based on symptoms",
+        "2. WHY IT MIGHT BE HAPPENING: List likely causes or triggers",
+        "3. WHAT TO DO: Specific actionable recommendations (rest, hydration, OTC meds, when to contact doctor, etc.)",
+        "4. WHAT TO AVOID: Contraindications and things to NOT do",
+        "5. RISK LEVEL: State as 'Low', 'Medium', or 'High'",
+        "6. EMERGENCY: State if immediate medical attention is needed (yes/no)",
+        "Do not ask follow-up questions. Be direct, clear, and practical.",
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      const finalResponse = enrichResponse(
+        await chatSymptoms({
+          message: summaryMessage,
+          context: {
+            type: selectedTopic.defaultType,
+            duration: nextAnswers.duration ?? duration,
+            severity: normalizeSeverityInput(nextAnswers.severity ?? severity),
+            painType,
+            location: nextAnswers.location ?? location,
+            redFlags: normalizeYesNo(nextAnswers.redFlags),
+          },
+        }),
+      );
+
+      const finalTimestamp = Date.now();
+      setHistory((prev) => [
+        ...prev,
+        {
+          id: `${finalTimestamp}-premade-final-a`,
+          role: "assistant",
+          text: finalResponse.reply,
+          response: {
+            ...finalResponse,
+            nextQuestion: null,
+          },
+        },
+      ]);
+
+      setType(finalResponse.collectedData.type ?? selectedTopic.defaultType);
+      setDuration(finalResponse.collectedData.duration ?? (nextAnswers.duration ?? duration));
+      setSeverity(finalResponse.collectedData.severity ?? normalizeSeverityInput(nextAnswers.severity ?? severity));
+      setPainType(finalResponse.collectedData.painType ?? painType);
+      setLocation(finalResponse.collectedData.location ?? (nextAnswers.location ?? location));
+      setRedFlags(Boolean(finalResponse.collectedData.redFlags || normalizeYesNo(nextAnswers.redFlags)));
+
+      // Reset to allow follow-ups or new direct queries
+      setPremadeQuestionIndex(0);
+      setPremadeAnswers({});
+      setFlowMode("idle");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to analyze symptoms");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function applyQuickAnswer(value: string, source: "ai" | "premade") {
+    if (source === "premade") {
+      void handlePremadeAnswer(value);
+      return;
+    }
+
     if (/today|day|not sure/i.test(value)) {
       setDuration(value);
     }
@@ -219,10 +486,10 @@ export default function SymptomConsole() {
           <div className="mx-auto mt-3 flex max-w-2xl flex-wrap justify-center gap-2">
             {suggestedTopics.map((topic) => (
               <button
-                key={topic.label}
+                key={topic.id}
                 type="button"
                 className="btn-secondary !rounded-full !px-4 !py-2 text-sm"
-                onClick={() => onSuggestedClick(topic.seed)}
+                onClick={() => onSuggestedClick(topic)}
               >
                 <span className="mr-2">{topic.emoji}</span>
                 {topic.label}
@@ -283,7 +550,7 @@ export default function SymptomConsole() {
                   className="btn-secondary"
                   onClick={() => {
                     setShowIntake(false);
-                    setPendingSeedMessage("");
+                    setSelectedTopic(null);
                   }}
                 >
                   Cancel
@@ -302,6 +569,11 @@ export default function SymptomConsole() {
       <div ref={chatScrollRef} className="max-h-[66vh] space-y-4 overflow-auto rounded-3xl border border-slate-200 bg-white/90 p-4 md:p-6">
         {history.map((item) => (
           <div key={item.id} className="space-y-2">
+            {(() => {
+              const sections = splitAssessmentSections(item.text);
+              const isStructuredAssessment = item.role === "assistant" && sections.length >= 4;
+
+              return (
             <div className={`flex ${item.role === "user" ? "justify-end" : "justify-start"}`}>
               <div
                 className={`max-w-[78%] rounded-2xl px-4 py-3 text-sm shadow-sm ${
@@ -310,9 +582,42 @@ export default function SymptomConsole() {
                     : "border border-slate-200 bg-slate-50 text-slate-800"
                 }`}
               >
-                {item.text}
+                {isStructuredAssessment ? (
+                  <div className="space-y-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Triage assessment</p>
+                    {sections.map((section) => (
+                      <div key={`${item.id}-${section.key}`} className="rounded-xl border border-slate-200 bg-white p-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">{section.title}</p>
+                        <p className="mt-1 whitespace-pre-line text-sm leading-6 text-slate-800">{section.value}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="whitespace-pre-line">{item.text}</p>
+                )}
               </div>
             </div>
+              );
+            })()}
+
+            {!!item.quickOptions?.length && (
+              <div className="ml-1 max-w-[78%] rounded-2xl border border-slate-200 bg-white p-4">
+                <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Choose an option</p>
+                <div className="mt-2 space-y-2">
+                  {item.quickOptions.map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-sm text-slate-700 hover:bg-slate-100"
+                      onClick={() => applyQuickAnswer(opt, "premade")}
+                    >
+                      <span className="text-slate-400">◯</span>
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {item.role === "assistant" && item.response?.nextQuestion && (
               <div className="ml-1 max-w-[78%] rounded-2xl border border-slate-200 bg-white p-4">
@@ -324,7 +629,7 @@ export default function SymptomConsole() {
                         key={opt}
                         type="button"
                         className="flex w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-sm text-slate-700 hover:bg-slate-100"
-                        onClick={() => applyQuickAnswer(opt)}
+                        onClick={() => applyQuickAnswer(opt, "ai")}
                       >
                         <span className="text-slate-400">◯</span>
                         {opt}
@@ -350,7 +655,11 @@ export default function SymptomConsole() {
           className="h-11 w-full rounded-xl border-0 px-3 text-sm text-slate-700 outline-none"
           value={message}
           onChange={(e) => setMessage(e.target.value)}
-          placeholder="Continue the conversation..."
+          placeholder={
+            flowMode === "premade" && premadeQuestionIndex < premadeQuestions.length
+              ? "Answer the current question..."
+              : "Continue the conversation..."
+          }
         />
         <button type="submit" className="btn-primary h-10 px-4" disabled={loading || !message.trim()}>
           Send
@@ -385,6 +694,11 @@ export default function SymptomConsole() {
                 Emergency signal detected. Seek immediate medical care now.
               </div>
             )}
+            {flowMode === "direct" && (
+              <p className="text-xs text-slate-500">
+                Follow-up questions used: {Math.min(directFollowUpsAsked, maxDirectFollowUps)}/{maxDirectFollowUps}
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -394,6 +708,21 @@ export default function SymptomConsole() {
   );
 }
 
+function enrichResponse(response: SymptomChatResponse): SymptomChatResponse {
+  return {
+    ...response,
+    nextQuestion: response.nextQuestion
+      ? {
+          ...response.nextQuestion,
+          options:
+            response.nextQuestion.options?.length
+              ? response.nextQuestion.options
+              : inferOptionsFromQuestion(response.nextQuestion.question),
+        }
+      : null,
+  };
+}
+
 function inferOptionsFromQuestion(question: string): string[] {
   for (const rule of fallbackQuestionOptions) {
     if (rule.hint.test(question)) {
@@ -401,6 +730,40 @@ function inferOptionsFromQuestion(question: string): string[] {
     }
   }
   return [];
+}
+
+function applyPremadeAnswerToState(
+  questionId: PremadeQuestion["id"],
+  answer: string,
+  setters: {
+    setDuration: (v: string) => void;
+    setSeverity: (v: string) => void;
+    setLocation: (v: string) => void;
+    setRedFlags: (v: boolean) => void;
+  },
+) {
+  if (questionId === "duration") {
+    setters.setDuration(answer);
+    return;
+  }
+
+  if (questionId === "severity") {
+    setters.setSeverity(normalizeSeverityInput(answer));
+    return;
+  }
+
+  if (questionId === "location") {
+    setters.setLocation(answer);
+    return;
+  }
+
+  if (questionId === "redFlags") {
+    setters.setRedFlags(normalizeYesNo(answer));
+  }
+}
+
+function normalizeYesNo(value: string): boolean {
+  return /^y(es)?$/i.test(value.trim());
 }
 
 function normalizeSeverityInput(value: string): string {
@@ -419,4 +782,36 @@ function normalizeSeverityInput(value: string): string {
   }
 
   return "";
+}
+
+function splitAssessmentSections(text: string): AssessmentSection[] {
+  const cleaned = text.replace(/\s+/g, " ").trim();
+  if (!cleaned) return [];
+
+  const sectionRegex =
+    /(What is likely happening|Why it might be happening|What to do|What to avoid|When to seek care|Risk level|Emergency):/gi;
+
+  const markers = Array.from(cleaned.matchAll(sectionRegex));
+  if (markers.length === 0) return [];
+
+  const sections: AssessmentSection[] = [];
+
+  for (let i = 0; i < markers.length; i++) {
+    const current = markers[i];
+    const next = markers[i + 1];
+    const title = current[1];
+    const from = (current.index ?? 0) + current[0].length;
+    const to = next?.index ?? cleaned.length;
+    const value = cleaned.slice(from, to).trim();
+
+    if (!value) continue;
+
+    sections.push({
+      key: title.toLowerCase().replace(/\s+/g, "-"),
+      title,
+      value,
+    });
+  }
+
+  return sections;
 }
