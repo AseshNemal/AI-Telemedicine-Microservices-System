@@ -1,6 +1,11 @@
-import SymptomConsole from "@/app/components/SymptomConsole";
+'use client';
+
+import { useRouter } from 'next/navigation';
+import SymptomConsole from '@/app/components/SymptomConsole';
 
 export default function SymptomsPage() {
+  const router = useRouter();
+
   return (
     <main className="page-shell">
       <section className="hero-shell">
@@ -30,7 +35,7 @@ export default function SymptomsPage() {
         </div>
       </section>
 
-      <SymptomConsole />
+      <SymptomConsole onOpenVoice={() => router.push('/symptoms/voice')} />
 
       <section className="surface-card">
         <p className="section-kicker">Important notice</p>

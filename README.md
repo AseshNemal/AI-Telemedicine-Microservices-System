@@ -2,7 +2,7 @@
 
 Cloud-native distributed microservices starter for telemedicine use cases (patient, doctor, admin) using a hybrid backend stack:
 - Node.js + Express + MongoDB (MERN-style services): `auth-service-node`, `patient-service-node`
-- Go + Gin services: `doctor-service`, `appointment-service`, `notification-service`, `payment-service`
+- Go + Gin services: `doctor-service`, `appointment-service`, `notification-service`, `payment-service`, `AI-symptom-service`
 
 Also includes Docker, Docker Compose, Kubernetes manifests, and a Next.js frontend.
 
@@ -49,7 +49,8 @@ AI Telemedicine Microservices System/
 │   ├── doctor-service/
 │   ├── appointment-service/
 │   ├── notification-service/
-│   └── payment-service/
+│   ├── payment-service/
+│   └── AI-symptom-service/
 ├── web-app/
 ├── deployments/
 │   ├── docker-compose.yml
@@ -71,6 +72,7 @@ AI Telemedicine Microservices System/
 - Appointment Service -> `8083`
 - Notification Service -> `8084`
 - Payment Service -> `8085`
+- AI Symptom Service -> `8091`
 - Next.js Frontend -> `3000`
 
 ## API Endpoints
@@ -118,6 +120,15 @@ AI Telemedicine Microservices System/
 - `POST /webhook` (Payment provider webhook)
 - `GET /health` (Health check)
 
+### AI Symptom Service
+- `POST /symptoms/chat` (AI triage conversation)
+- `GET /health` (Health check)
+
+### Frontend Symptom Routes
+- `GET /symptoms` (chat-first symptom assessment)
+- `GET /symptoms/voice` (voice assistant mode)
+- `POST /api/symptoms/chat` (Next.js backend proxy to AI symptom service)
+
 ## Environment Variables
 
 Use your current `.env` for local runtime and `.env.example` as template.
@@ -142,6 +153,11 @@ Required:
 	- `NEXT_PUBLIC_DOCTOR_SERVICE_URL`
 	- `NEXT_PUBLIC_APPOINTMENT_SERVICE_URL`
 	- `NEXT_PUBLIC_PAYMENT_SERVICE_URL`
+	- `NEXT_PUBLIC_SYMPTOM_SERVICE_URL`
+- AI symptom service:
+	- `OPENAI_API_KEY` (required)
+	- `OPENAI_MODEL` (optional, default: `gpt-4o-mini`)
+	- `SYMPTOM_SERVICE_URL` (for Next.js server-side proxy, default: `http://localhost:8091`)
 
 Node service runtime mapping in Docker/K8s:
 - Auth service uses `MONGO_URI`, `PATIENT_SERVICE_URL`, `INTERNAL_SERVICE_KEY`, Firebase vars
@@ -161,8 +177,10 @@ Run from the `deployments/` directory:
 	 - Doctor Service: `http://localhost/doctors`
 	 - Appointment Service: `http://localhost/appointments`
 	 - Payment Service: `http://localhost/payments`
+	 - AI Symptom Service (direct): `http://localhost:8091`
 	 - Notifications: `http://localhost/send-email`, `/send-sms`
 	 - Frontend: `http://localhost:3000`
+	 - Frontend symptom proxy: `http://localhost:3000/api/symptoms/chat`
 	 - Swagger Docs: `http://localhost/api-docs`
 3. Stop services:
 	 - `Ctrl + C`
@@ -182,8 +200,10 @@ Run from the `deployments` folder:
 	 - Doctor Service: `http://localhost/doctors`
 	 - Appointment Service: `http://localhost/appointments`
 	 - Payment Service: `http://localhost/payments`
+	 - AI Symptom Service (direct): `http://localhost:8091`
 	 - Notifications: `http://localhost/send-email`, `/send-sms`
 	 - Frontend: `http://localhost:3000`
+	 - Frontend symptom proxy: `http://localhost:3000/api/symptoms/chat`
 	 - Swagger Docs: `http://localhost/api-docs`
 3. Stop services:
 	 - `Ctrl + C`
@@ -207,6 +227,7 @@ Or direct service checks:
 - `http://localhost:8083/health`
 - `http://localhost:8084/health`
 - `http://localhost:8085/health`
+- `http://localhost:8091/health`
 
 ## API Smoke Test (Sample Data)
 
@@ -242,6 +263,11 @@ Expected behavior:
 	- Re-check `AUTH_MONGO_URI` / `PATIENT_MONGO_URI` (or fallback `DATABASE_URL`) in root `.env`.
 - Firebase credential errors at startup:
 	- Ensure `FIREBASE_SERVICE_ACCOUNT_PATH` points to mounted file and file exists.
+- AI symptom service exits with code 1:
+	- Ensure `OPENAI_API_KEY` is present in root `.env`.
+	- Ensure `OPENAI_MODEL` is valid (or omit to use default `gpt-4o-mini`).
+- Symptom replies not reaching frontend:
+	- Verify `SYMPTOM_SERVICE_URL` (server-side) or `NEXT_PUBLIC_SYMPTOM_SERVICE_URL` points to `http://localhost:8091`.
 - Stale containers/images:
 	- Run `docker compose down` then `docker compose up --build`.
 
@@ -252,6 +278,7 @@ Expected behavior:
 	- Auth Service creates Firebase users + role claims.
 	- Auth/Patient verify Firebase ID tokens with Firebase Admin SDK.
 - Appointment service triggers notification service after booking creation.
+- Symptom flow supports chat + voice modes; frontend uses `/api/symptoms/chat` as backend proxy.
 - MongoDB Atlas is configured via `DATABASE_URL`.
 - Services are independently deployable and communicate via REST APIs.
 
@@ -332,6 +359,11 @@ Notes:
 - To run the Doctor service: `cd services/doctor-service && set -o allexport; source ../../.env; set +o allexport && PORT=8082 go run main.go`.
 - To run Notification: use port `8084`.
 - To run Payment service: `cd services/payment-service && set -o allexport; source ../../.env; set +o allexport && PORT=8085 DATABASE_URL=mongodb://admin:admin@localhost:27017/payment-db?authSource=admin go run main.go`.
+- To run AI Symptom service:
+	- `cd services/AI-symptom-service`
+	- `set -o allexport; source ../../.env; set +o allexport`
+	- `export PORT=8091`
+	- `go run main.go`
 
 Run Auth Service (Node/Express, Firebase-auth-only):
 
@@ -394,6 +426,10 @@ Working endpoints per service (use the service's host/port when running a single
 	- GET /patients/:patientId/payments
 	- DELETE /payments/:transactionId
 	- POST /webhook
+	- GET /health
+
+- AI Symptom Service (http://localhost:8091)
+	- POST /symptoms/chat
 	- GET /health
 
 ## Team workflow suggestion (5 members)

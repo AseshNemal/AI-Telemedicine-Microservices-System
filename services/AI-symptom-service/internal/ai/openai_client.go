@@ -46,6 +46,7 @@ RESPONSE FORMAT:
 
 RULES:
 - Ask ONE question only IF more info needed
+- Ask at most TWO follow-up questions total, then provide final guidance
 - If emergency → nextQuestion=null AND give brief guidance
 - If enough data collected → provide structured final guidance with nextQuestion=null
 - Always include risk level and emergency status`

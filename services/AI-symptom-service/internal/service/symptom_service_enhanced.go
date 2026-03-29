@@ -191,9 +191,8 @@ func buildCompletionReply(ctx model.SymptomContext, steps *model.NextSteps) stri
 		location = "unspecified area"
 	}
 
-	whatHappening := fmt.Sprintf("Your symptoms are most consistent with a likely %s pattern (%s severity, %s).", symptom, severity, location)
-	whyHappening := inferLikelyCause(ctx)
-	whatAvoid := inferWhatToAvoid(ctx)
+	whatHappening := fmt.Sprintf("Based on what you’ve shared, your symptoms look like a %s pattern affecting %s. This is quite common and is usually linked to infections or dehydration.", symptom, location)
+	whyHappening := "It could be due to things like " + strings.TrimSuffix(strings.ToLower(inferLikelyCause(ctx)), ".") + "."
 
 	risk := "Medium"
 	emergencyText := "No immediate emergency signs are confirmed right now, but continue monitoring."
@@ -212,26 +211,153 @@ func buildCompletionReply(ctx model.SymptomContext, steps *model.NextSteps) stri
 		}
 	}
 
-	whatToDo := "Stay hydrated, rest, and monitor your symptoms."
-	whenSeek := "Seek care promptly if symptoms worsen or new red-flag symptoms appear."
+	whatToDoItems := inferWhatToDoItems(ctx)
+	whatAvoidItems := inferWhatToAvoidItems(ctx)
+	whenSeekItems := inferWhenToSeekCareItems(ctx, steps)
 	if steps != nil {
-		if strings.TrimSpace(steps.MedicalRecommendation) != "" {
-			whatToDo = steps.MedicalRecommendation
-		}
 		if strings.TrimSpace(steps.WhenToSeekCare) != "" {
-			whenSeek = steps.WhenToSeekCare
+			whenSeekItems = append([]string{strings.TrimSpace(steps.WhenToSeekCare)}, whenSeekItems...)
 		}
 	}
 
+	riskEmoji := "🟢"
+	if strings.EqualFold(risk, "Medium") {
+		riskEmoji = "🟠"
+	}
+	if strings.EqualFold(risk, "High") {
+		riskEmoji = "🔴"
+	}
+
+	emergencyLine := "🚑 Continue monitoring and seek care soon if symptoms worsen."
+	if strings.EqualFold(risk, "High") || strings.Contains(strings.ToLower(emergencyText), "yes") {
+		emergencyLine = "🚑 This may require urgent care — it’s best to see a doctor as soon as possible."
+	}
+
+	toDoBullets := make([]string, 0, len(whatToDoItems))
+	for _, item := range whatToDoItems {
+		toDoBullets = append(toDoBullets, "• "+item)
+	}
+
+	avoidBullets := make([]string, 0, len(whatAvoidItems))
+	for _, item := range whatAvoidItems {
+		avoidBullets = append(avoidBullets, "• "+item)
+	}
+
+	seekBullets := make([]string, 0, len(whenSeekItems))
+	for _, item := range whenSeekItems {
+		seekBullets = append(seekBullets, "• "+item)
+	}
+
 	return strings.Join([]string{
-		"What is likely happening: " + whatHappening,
-		"Why it might be happening: " + whyHappening,
-		"What to do: " + whatToDo,
-		"What to avoid: " + whatAvoid,
-		"When to seek care: " + whenSeek,
-		"Risk level: " + risk + ".",
-		"Emergency: " + emergencyText,
+		"🩺 Quick Health Check",
+		"",
+		whatHappening,
+		"",
+		"💡 What might be causing this?",
+		whyHappening,
+		"",
+		"✅ What you can do right now:",
+		strings.Join(toDoBullets, "\n"),
+		"",
+		"⚠️ What to avoid:",
+		strings.Join(avoidBullets, "\n"),
+		"",
+		"🚨 When to seek medical help:",
+		"Please get medical attention immediately if:",
+		strings.Join(seekBullets, "\n"),
+		"",
+		riskEmoji + " Risk level: " + risk,
+		emergencyLine,
 	}, "\n")
+}
+
+func inferWhatToDoItems(ctx model.SymptomContext) []string {
+	switch strings.ToLower(strings.TrimSpace(ctx.Type)) {
+	case "fever":
+		return []string{
+			"Get plenty of rest",
+			"Drink lots of fluids",
+			"Eat light, easy-to-digest meals",
+			"Use a cool compress if you feel too warm",
+			"Check your temperature every 4 hours",
+		}
+	case "headache":
+		return []string{
+			"Rest in a quiet, dim room",
+			"Drink water regularly",
+			"Use prescribed or OTC pain relief as directed",
+			"Limit screen time for a while",
+			"Monitor if headache gets stronger",
+		}
+	case "cough", "cold", "cough and cold":
+		return []string{
+			"Take warm fluids throughout the day",
+			"Use throat soothing options like honey/lozenges",
+			"Get adequate rest",
+			"Avoid smoke and irritants",
+			"Monitor for breathing difficulty",
+		}
+	default:
+		return []string{
+			"Get enough rest",
+			"Stay hydrated",
+			"Eat simple, light meals",
+			"Monitor symptoms every few hours",
+			"Seek care if symptoms worsen",
+		}
+	}
+}
+
+func inferWhatToAvoidItems(ctx model.SymptomContext) []string {
+	switch strings.ToLower(strings.TrimSpace(ctx.Type)) {
+	case "fever":
+		return []string{
+			"Don’t let yourself get dehydrated",
+			"Avoid alcohol",
+			"Don’t take more than the recommended dose of fever medicine",
+			"Don’t ignore symptoms if they get worse",
+		}
+	case "headache":
+		return []string{
+			"Avoid sleep deprivation",
+			"Avoid prolonged screen exposure",
+			"Don’t overuse painkillers",
+			"Don’t ignore sudden severe headache",
+		}
+	case "cough", "cold", "cough and cold":
+		return []string{
+			"Avoid smoking and dust exposure",
+			"Don’t self-start antibiotics",
+			"Avoid dehydration",
+			"Don’t ignore chest pain or breathing issues",
+		}
+	default:
+		return []string{
+			"Avoid self-medicating repeatedly",
+			"Avoid delaying medical care if symptoms worsen",
+		}
+	}
+}
+
+func inferWhenToSeekCareItems(ctx model.SymptomContext, steps *model.NextSteps) []string {
+	if strings.EqualFold(strings.TrimSpace(ctx.Type), "fever") {
+		return []string{
+			"Your temperature goes above 39.4°C (103°F)",
+			"You feel confused or have a stiff neck",
+			"You have trouble breathing",
+			"Your symptoms keep getting worse",
+		}
+	}
+
+	if steps != nil && strings.TrimSpace(steps.WhenToSeekCare) != "" {
+		return []string{strings.TrimSpace(steps.WhenToSeekCare)}
+	}
+
+	return []string{
+		"Symptoms become severe or persistent",
+		"You develop breathing difficulty, confusion, or chest pain",
+		"New red-flag signs appear",
+	}
 }
 
 func inferLikelyCause(ctx model.SymptomContext) string {

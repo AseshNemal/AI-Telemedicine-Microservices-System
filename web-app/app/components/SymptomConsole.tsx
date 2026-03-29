@@ -34,6 +34,18 @@ type AssessmentSection = {
   value: string;
 };
 
+type QuickHealthCheckView = {
+  title: string;
+  intro: string;
+  cause: string;
+  whatToDo: string[];
+  whatToAvoid: string[];
+  seekIntro: string;
+  seekItems: string[];
+  riskLine: string;
+  emergencyLine: string;
+};
+
 const suggestedTopics: SuggestedTopic[] = [
   {
     id: "headache",
@@ -85,7 +97,11 @@ const fallbackQuestionOptions: Array<{ hint: RegExp; options: string[] }> = [
 
 const maxDirectFollowUps = 3;
 
-export default function SymptomConsole() {
+type SymptomConsoleProps = {
+  onOpenVoice?: () => void;
+};
+
+export default function SymptomConsole({ onOpenVoice }: SymptomConsoleProps) {
   const [mode, setMode] = useState<ChatMode>("home");
   const [flowMode, setFlowMode] = useState<FlowMode>("idle");
 
@@ -497,6 +513,18 @@ export default function SymptomConsole() {
             ))}
           </div>
 
+          {onOpenVoice && (
+            <div className="mt-5">
+              <button
+                type="button"
+                onClick={onOpenVoice}
+                className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+              >
+                Use Voice Assistant
+              </button>
+            </div>
+          )}
+
           {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
         </div>
 
@@ -570,7 +598,10 @@ export default function SymptomConsole() {
         {history.map((item) => (
           <div key={item.id} className="space-y-2">
             {(() => {
+              const quickHealthFromText = item.role === "assistant" ? parseQuickHealthCheck(item.text) : null;
               const sections = splitAssessmentSections(item.text);
+              const quickHealthFromLegacy = item.role === "assistant" ? parseLegacySectionsAsQuickHealth(sections) : null;
+              const quickHealth = quickHealthFromText ?? quickHealthFromLegacy;
               const isStructuredAssessment = item.role === "assistant" && sections.length >= 4;
 
               return (
@@ -582,7 +613,49 @@ export default function SymptomConsole() {
                     : "border border-slate-200 bg-slate-50 text-slate-800"
                 }`}
               >
-                {isStructuredAssessment ? (
+                {quickHealth ? (
+                  <div className="space-y-4">
+                    <p className="text-xl font-semibold text-slate-900">{quickHealth.title}</p>
+
+                    <p className="whitespace-pre-line text-sm leading-6 text-slate-800">{quickHealth.intro}</p>
+
+                    <div className="space-y-1">
+                      <p className="font-semibold text-slate-900">💡 What might be causing this?</p>
+                      <p className="whitespace-pre-line text-sm leading-6 text-slate-800">{quickHealth.cause}</p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <p className="font-semibold text-slate-900">✅ What you can do right now:</p>
+                      <ul className="space-y-1 pl-5 text-sm leading-6 text-slate-800">
+                        {quickHealth.whatToDo.map((itemText, i) => (
+                          <li key={`todo-${i}`} className="list-disc">{itemText}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="space-y-1">
+                      <p className="font-semibold text-slate-900">⚠️ What to avoid:</p>
+                      <ul className="space-y-1 pl-5 text-sm leading-6 text-slate-800">
+                        {quickHealth.whatToAvoid.map((itemText, i) => (
+                          <li key={`avoid-${i}`} className="list-disc">{itemText}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="space-y-1">
+                      <p className="font-semibold text-slate-900">🚨 When to seek medical help:</p>
+                      <p className="text-sm leading-6 text-slate-800">{quickHealth.seekIntro}</p>
+                      <ul className="space-y-1 pl-5 text-sm leading-6 text-slate-800">
+                        {quickHealth.seekItems.map((itemText, i) => (
+                          <li key={`seek-${i}`} className="list-disc">{itemText}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <p className="font-semibold text-red-700">{quickHealth.riskLine}</p>
+                    <p className="font-medium text-red-700">{quickHealth.emergencyLine}</p>
+                  </div>
+                ) : isStructuredAssessment ? (
                   <div className="space-y-3">
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Triage assessment</p>
                     {sections.map((section) => (
@@ -708,6 +781,116 @@ export default function SymptomConsole() {
   );
 }
 
+function parseQuickHealthCheck(text: string): QuickHealthCheckView | null {
+  const normalized = text.toLowerCase();
+  if (!normalized.includes("quick health check")) {
+    return null;
+  }
+
+  const capture = (start: RegExp, end: RegExp): string => {
+    const startMatch = text.match(start);
+    if (!startMatch || startMatch.index === undefined) return "";
+
+    const from = startMatch.index + startMatch[0].length;
+    const tail = text.slice(from);
+    const endMatch = tail.match(end);
+    const to = endMatch?.index ?? tail.length;
+    return tail.slice(0, to).trim();
+  };
+
+  const titleMatch = text.match(/🩺\s*Quick Health Check|Quick Health Check/i);
+  const title = titleMatch?.[0]?.trim() || "🩺 Quick Health Check";
+
+  const intro = capture(/🩺\s*Quick Health Check[\s\S]*?\n\s*/i, /\n\s*💡\s*What might be causing this\?/i);
+  const cause = capture(/💡\s*What might be causing this\?\s*/i, /\n\s*✅\s*What you can do right now:/i);
+  const whatToDoBlock = capture(/✅\s*What you can do right now:\s*/i, /\n\s*⚠️\s*What to avoid:/i);
+  const whatToAvoidBlock = capture(/⚠️\s*What to avoid:\s*/i, /\n\s*🚨\s*When to seek medical help:/i);
+  const seekBlock = capture(/🚨\s*When to seek medical help:\s*/i, /\n\s*[🔴🟠🟢]\s*Risk level:/i);
+
+  const riskMatch = text.match(/[🔴🟠🟢]\s*Risk level:\s*[^\n]+/i);
+  const emergencyMatch = text.match(/🚑\s*[^\n]+/i);
+
+  const toBulletItems = (block: string): string[] =>
+    block
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("•"))
+      .map((line) => line.replace(/^•\s*/, "").trim());
+
+  const seekLines = seekBlock
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const seekIntro = seekLines.find((line) => !line.startsWith("•")) ?? "Please get medical attention immediately if:";
+  const seekItems = seekLines
+    .filter((line) => line.startsWith("•"))
+    .map((line) => line.replace(/^•\s*/, "").trim());
+
+  return {
+    title,
+    intro,
+    cause,
+    whatToDo: toBulletItems(whatToDoBlock),
+    whatToAvoid: toBulletItems(whatToAvoidBlock),
+    seekIntro,
+    seekItems,
+    riskLine: riskMatch?.[0]?.trim() || "🔴 Risk level: High",
+    emergencyLine: emergencyMatch?.[0]?.trim() || "🚑 This may require urgent care — it’s best to see a doctor as soon as possible.",
+  };
+}
+
+function parseLegacySectionsAsQuickHealth(sections: AssessmentSection[]): QuickHealthCheckView | null {
+  if (sections.length < 4) return null;
+
+  const getSectionValue = (name: string) =>
+    sections.find((s) => s.title.trim().toLowerCase() === name.toLowerCase())?.value?.trim() ?? "";
+
+  const whatLikely = getSectionValue("What is likely happening");
+  const why = getSectionValue("Why it might be happening");
+  const whatToDoRaw = getSectionValue("What to do");
+  const whatToAvoidRaw = getSectionValue("What to avoid");
+  const whenSeekRaw = getSectionValue("When to seek care");
+  const riskRaw = getSectionValue("Risk level");
+  const emergencyRaw = getSectionValue("Emergency");
+
+  const splitToBullets = (raw: string): string[] => {
+    if (!raw) return [];
+    if (raw.includes("•")) {
+      return raw
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith("•"))
+        .map((line) => line.replace(/^•\s*/, "").trim());
+    }
+
+    return raw
+      .split(/\.|;/)
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0)
+      .slice(0, 6);
+  };
+
+  const riskText = riskRaw ? riskRaw.replace(/\.$/, "") : "Medium";
+  const riskEmoji = /high/i.test(riskText) ? "🔴" : /low/i.test(riskText) ? "🟢" : "🟠";
+
+  const seekItems = splitToBullets(whenSeekRaw);
+
+  return {
+    title: "🩺 Quick Health Check",
+    intro: whatLikely || "Based on what you’ve shared, here is your symptom assessment.",
+    cause: why || "Possible causes can include common infections, inflammation, or other non-emergency triggers.",
+    whatToDo: splitToBullets(whatToDoRaw),
+    whatToAvoid: splitToBullets(whatToAvoidRaw),
+    seekIntro: "Please get medical attention immediately if:",
+    seekItems,
+    riskLine: `${riskEmoji} Risk level: ${riskText}`,
+    emergencyLine: emergencyRaw
+      ? `🚑 ${emergencyRaw}`
+      : "🚑 This may require urgent care — it’s best to see a doctor as soon as possible.",
+  };
+}
+
 function enrichResponse(response: SymptomChatResponse): SymptomChatResponse {
   return {
     ...response,
@@ -785,6 +968,15 @@ function normalizeSeverityInput(value: string): string {
 }
 
 function splitAssessmentSections(text: string): AssessmentSection[] {
+  const normalized = text.toLowerCase();
+  if (
+    normalized.includes("quick health check") ||
+    normalized.includes("🩺 quick health check") ||
+    normalized.includes("💡 what might be causing this")
+  ) {
+    return [];
+  }
+
   const cleaned = text.replace(/\s+/g, " ").trim();
   if (!cleaned) return [];
 
