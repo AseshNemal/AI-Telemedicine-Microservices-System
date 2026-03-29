@@ -25,13 +25,6 @@ func (s *SymptomService) Chat(ctx context.Context, req model.SymptomChatRequest)
 		return model.SymptomChatResponse{}, errors.New("message is required")
 	}
 
-	// Minimum API-call mode:
-	// For common guided symptom flows, use deterministic adaptive flow directly
-	// so we don't call AI on every short answer and risk repetitive loops.
-	if shouldUseDeterministicFlow(req) {
-		return updateAdaptiveQuestionFlow(req), nil
-	}
-
 	raw, err := s.aiClient.Chat(ctx, req, "")
 	if err != nil {
 		return updateAdaptiveQuestionFlow(req), nil
@@ -62,6 +55,14 @@ func (s *SymptomService) Chat(ctx context.Context, req model.SymptomChatRequest)
 
 	if parsed.Emergency {
 		parsed.NextQuestion = nil
+	}
+
+	// Hard guardrail: once core triage data exists, stop follow-up loop and return final guidance.
+	if !parsed.Emergency && parsed.NextQuestion != nil && hasCoreTriageData(parsed.CollectedData) {
+		parsed.NextSteps = generateNextStepsSummary(parsed.CollectedData)
+		parsed.Reply = buildCompletionReply(parsed.CollectedData, parsed.NextSteps)
+		parsed.NextQuestion = nil
+		return parsed, nil
 	}
 
 	// If AI returns an incomplete turn (no next question and no next steps),
@@ -102,7 +103,39 @@ func (s *SymptomService) Chat(ctx context.Context, req model.SymptomChatRequest)
 		return updateAdaptiveQuestionFlow(req), nil
 	}
 
+	// Normalize final answers to the friendly template requested by product UX.
+	if shouldRenderFriendlyFinal(parsed) {
+		if parsed.NextSteps == nil {
+			parsed.NextSteps = generateNextStepsSummary(parsed.CollectedData)
+		}
+		parsed.Reply = buildCompletionReply(parsed.CollectedData, parsed.NextSteps)
+		parsed.NextQuestion = nil
+	}
+
 	return parsed, nil
+}
+
+func shouldRenderFriendlyFinal(resp model.SymptomChatResponse) bool {
+	if resp.NextQuestion != nil {
+		return false
+	}
+
+	if resp.Emergency {
+		return true
+	}
+
+	if resp.NextSteps != nil {
+		return true
+	}
+
+	return hasCoreTriageData(resp.CollectedData)
+}
+
+func hasCoreTriageData(ctx model.SymptomContext) bool {
+	return strings.TrimSpace(ctx.Type) != "" &&
+		strings.TrimSpace(ctx.Duration) != "" &&
+		strings.TrimSpace(ctx.Severity) != "" &&
+		strings.TrimSpace(ctx.Location) != ""
 }
 
 func shouldUseDeterministicFlow(req model.SymptomChatRequest) bool {
@@ -138,6 +171,21 @@ func shouldUseDeterministicFlow(req model.SymptomChatRequest) bool {
 
 func normalizeContextFromMessage(ctx model.SymptomContext, message string) model.SymptomContext {
 	msg := strings.ToLower(strings.TrimSpace(message))
+
+	if strings.TrimSpace(ctx.Type) == "" {
+		switch {
+		case strings.Contains(msg, "headache") || strings.Contains(msg, "migraine") || strings.Contains(msg, "head pain"):
+			ctx.Type = "headache"
+		case strings.Contains(msg, "fever") || strings.Contains(msg, "chills"):
+			ctx.Type = "fever"
+		case strings.Contains(msg, "cough") || strings.Contains(msg, "cold"):
+			ctx.Type = "cough"
+		case strings.Contains(msg, "stomach") || strings.Contains(msg, "abdomen") || strings.Contains(msg, "abdominal"):
+			ctx.Type = "stomach pain"
+		case strings.Contains(msg, "throat"):
+			ctx.Type = "sore throat"
+		}
+	}
 
 	if strings.TrimSpace(ctx.Severity) == "" {
 		switch {

@@ -15,11 +15,52 @@ export interface UseVoiceAssistantResult {
   lastMessage: string;
 }
 
+type SymptomContext = {
+  type?: string;
+  duration?: string;
+  severity?: string;
+  painType?: string;
+  location?: string;
+  redFlags?: boolean;
+};
+
+type SymptomChatApiResponse = {
+  reply?: string;
+  response?: string;
+  collectedData?: SymptomContext;
+  nextQuestion?: {
+    question?: string;
+  } | null;
+};
+
 const START_THRESHOLD = 0.08;
 const SILENCE_THRESHOLD = 0.03;
 const SILENCE_MS = 850;
-const INTERRUPT_THRESHOLD = 0.09;
-const INTERRUPT_HOLD_MS = 120;
+const INTERRUPT_THRESHOLD = 0.18;
+const INTERRUPT_HOLD_MS = 350;
+const MIN_SPEAK_BEFORE_INTERRUPT_MS = 1200;
+
+function truncateAtSentenceBoundary(message: string, maxChars: number): string {
+  if (message.length <= maxChars) return message;
+
+  const slice = message.slice(0, maxChars);
+  const lastSentenceEnd = Math.max(
+    slice.lastIndexOf('.'),
+    slice.lastIndexOf('!'),
+    slice.lastIndexOf('?'),
+  );
+
+  if (lastSentenceEnd >= Math.floor(maxChars * 0.5)) {
+    return slice.slice(0, lastSentenceEnd + 1).trim();
+  }
+
+  const lastSpace = slice.lastIndexOf(' ');
+  if (lastSpace >= Math.floor(maxChars * 0.6)) {
+    return `${slice.slice(0, lastSpace).trim()}...`;
+  }
+
+  return `${slice.trim()}...`;
+}
 
 export function useVoiceAssistant(): UseVoiceAssistantResult {
   const [state, setState] = useState<VoiceState>('idle');
@@ -43,6 +84,8 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
   const isStoppingRef = useRef(false);
   const lastUiUpdateRef = useRef(0);
   const lastAmplitudeRef = useRef(0);
+  const contextRef = useRef<SymptomContext>({});
+  const speakingStartedAtRef = useRef<number | null>(null);
 
   useEffect(() => {
     isListeningRef.current = isListening;
@@ -151,13 +194,19 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
 
       // Interrupt detection: if speaking and user speaks
       if (state === 'speaking' && combinedAmplitude > INTERRUPT_THRESHOLD) {
-        if (!interruptStartRef.current) {
-          interruptStartRef.current = Date.now();
-        } else if (Date.now() - interruptStartRef.current > INTERRUPT_HOLD_MS) {
-          // Cancel TTS immediately
-          window.speechSynthesis.cancel();
-          setState('listening');
-          interruptStartRef.current = null;
+        const canInterrupt =
+          speakingStartedAtRef.current !== null &&
+          Date.now() - speakingStartedAtRef.current > MIN_SPEAK_BEFORE_INTERRUPT_MS;
+
+        if (canInterrupt) {
+          if (!interruptStartRef.current) {
+            interruptStartRef.current = Date.now();
+          } else if (Date.now() - interruptStartRef.current > INTERRUPT_HOLD_MS) {
+            // Cancel TTS only on sustained, strong interrupt signal.
+            window.speechSynthesis.cancel();
+            setState('listening');
+            interruptStartRef.current = null;
+          }
         }
       } else {
         interruptStartRef.current = null;
@@ -201,20 +250,42 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
       const response = await fetch('/api/symptoms/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: msg, context: {} }),
+        body: JSON.stringify({ message: msg, context: contextRef.current }),
       });
 
       if (!response.ok) {
         throw new Error('Chat API failed');
       }
 
-      const data = await response.json();
-      const botMessage = data.response || 'I received your message.';
+      const data: SymptomChatApiResponse = await response.json();
+
+      if (data?.collectedData && typeof data.collectedData === 'object') {
+        contextRef.current = {
+          ...contextRef.current,
+          ...data.collectedData,
+        };
+      }
+
+      const baseReply =
+        (typeof data?.reply === 'string' && data.reply.trim()) ||
+        (typeof data?.response === 'string' && data.response.trim()) ||
+        'I received your message.';
+
+      const followUpQuestion =
+        (typeof data?.nextQuestion?.question === 'string' && data.nextQuestion.question.trim()) ||
+        '';
+
+      const normalizedReply = baseReply.trim().toLowerCase();
+      const normalizedQuestion = followUpQuestion.trim().toLowerCase();
+      const alreadyContainsQuestion =
+        normalizedQuestion.length > 0 && normalizedReply.includes(normalizedQuestion);
+
+      const botMessage = followUpQuestion && !alreadyContainsQuestion
+        ? `${baseReply} ${followUpQuestion}`
+        : baseReply;
       
-      // Truncate for voice (max 240 chars)
-      const truncated = botMessage.length > 240 
-        ? botMessage.substring(0, 237) + '...'
-        : botMessage;
+      // Truncate for voice while preserving sentence boundaries.
+      const truncated = truncateAtSentenceBoundary(botMessage, 420);
 
       setLastMessage(truncated);
       speakMessage(truncated);
@@ -226,6 +297,7 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
 
   const speakMessage = useCallback((message: string) => {
     setState('speaking');
+    speakingStartedAtRef.current = Date.now();
 
     const utterance = new SpeechSynthesisUtterance(message);
     utterance.rate = 0.95;
@@ -243,11 +315,13 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
     utterance.onend = () => {
       setState('listening');
       ttsPulseRef.current = 0;
+      speakingStartedAtRef.current = null;
     };
 
     utterance.onerror = () => {
       setState('idle');
       ttsPulseRef.current = 0;
+      speakingStartedAtRef.current = null;
     };
 
     synthRef.current = utterance;
@@ -260,6 +334,7 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
       // Request microphone access
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       micStreamRef.current = stream;
+      contextRef.current = {};
 
       // Setup Web Audio API for amplitude monitoring
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -311,6 +386,8 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
     setAmplitude(0);
     lastAmplitudeRef.current = 0;
     lastUiUpdateRef.current = 0;
+    contextRef.current = {};
+    speakingStartedAtRef.current = null;
     ttsPulseRef.current = 0;
   }, []);
 
