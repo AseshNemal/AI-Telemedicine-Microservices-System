@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: auth-service
+  name: patient-service
   namespace: default
 spec:
   replicas: 2
@@ -12,24 +12,24 @@ spec:
       maxUnavailable: 0
   selector:
     matchLabels:
-      app: auth-service
+      app: patient-service
   template:
     metadata:
       labels:
-        app: auth-service
+        app: patient-service
     spec:
       containers:
-        - name: auth-service
-          image: auth-service:latest
+        - name: patient-service
+          image: patient-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 5001
+            - containerPort: 5002
           env:
             - name: PORT
               valueFrom:
                 configMapKeyRef:
                   name: telemedicine-config
-                  key: AUTH_PORT
+                  key: PATIENT_PORT
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -76,8 +76,8 @@ spec:
           
           livenessProbe:
             httpGet:
-              path: /api/auth/health
-              port: 5001
+              path: /api/patients/health
+              port: 5002
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
@@ -85,8 +85,8 @@ spec:
           
           readinessProbe:
             httpGet:
-              path: /api/auth/health
-              port: 5001
+              path: /api/patients/health
+              port: 5002
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
@@ -96,23 +96,27 @@ spec:
             - name: firebase-secret
               mountPath: /var/secrets/firebase
               readOnly: true
+            - name: uploads
+              mountPath: /app/uploads
       
       volumes:
         - name: firebase-secret
           secret:
             secretName: firebase-service-account
+        - name: uploads
+          emptyDir: {}
 
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: auth-service
+  name: patient-service
   namespace: default
 spec:
   selector:
-    app: auth-service
+    app: patient-service
   ports:
-    - port: 5001
-      targetPort: 5001
+    - port: 5002
+      targetPort: 5002
       protocol: TCP
   type: ClusterIP

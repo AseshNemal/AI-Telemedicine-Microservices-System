@@ -2,8 +2,14 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: notification-service
+  namespace: default
 spec:
-  replicas: 1
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: notification-service
@@ -24,11 +30,69 @@ spec:
                 configMapKeyRef:
                   name: telemedicine-config
                   key: NOTIFICATION_PORT
+            - name: TWILIO_ACCOUNT_SID
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: TWILIO_ACCOUNT_SID
+            - name: TWILIO_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: TWILIO_AUTH_TOKEN
+            - name: TWILIO_PHONE_NUMBER
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: TWILIO_PHONE_NUMBER
+            - name: SENDGRID_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: SENDGRID_API_KEY
+            - name: SENDGRID_SENDER_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: SENDGRID_SENDER_EMAIL
+            - name: INTERNAL_SERVICE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: INTERNAL_SERVICE_KEY
+          
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          
+          livenessProbe:
+            httpGet:
+              path: /api/notifications/health
+              port: 8084
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          readinessProbe:
+            httpGet:
+              path: /api/notifications/health
+              port: 8084
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: notification-service
+  namespace: default
 spec:
   selector:
     app: notification-service

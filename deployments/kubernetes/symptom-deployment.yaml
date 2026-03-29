@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: appointment-service
+  name: symptom-service
   namespace: default
 spec:
   replicas: 2
@@ -12,34 +12,34 @@ spec:
       maxUnavailable: 0
   selector:
     matchLabels:
-      app: appointment-service
+      app: symptom-service
   template:
     metadata:
       labels:
-        app: appointment-service
+        app: symptom-service
     spec:
       containers:
-        - name: appointment-service
-          image: appointment-service:latest
+        - name: symptom-service
+          image: symptom-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8083
+            - containerPort: 8091
           env:
             - name: PORT
               valueFrom:
                 configMapKeyRef:
                   name: telemedicine-config
-                  key: APPOINTMENT_PORT
-            - name: DATABASE_URL
+                  key: SYMPTOM_SERVICE_PORT
+            - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: telemedicine-secrets
-                  key: DATABASE_URL
-            - name: NOTIFICATION_SERVICE_URL
+                  key: OPENAI_API_KEY
+            - name: OPENAI_MODEL
               valueFrom:
-                configMapKeyRef:
-                  name: telemedicine-config
-                  key: NOTIFICATION_SERVICE_URL
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: OPENAI_MODEL
             - name: INTERNAL_SERVICE_KEY
               valueFrom:
                 secretKeyRef:
@@ -48,16 +48,16 @@ spec:
           
           resources:
             requests:
-              memory: "128Mi"
-              cpu: "100m"
-            limits:
               memory: "256Mi"
-              cpu: "500m"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
           
           livenessProbe:
             httpGet:
-              path: /api/appointments/health
-              port: 8083
+              path: /api/symptom/health
+              port: 8091
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
@@ -65,8 +65,8 @@ spec:
           
           readinessProbe:
             httpGet:
-              path: /api/appointments/health
-              port: 8083
+              path: /api/symptom/health
+              port: 8091
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
@@ -76,13 +76,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: appointment-service
+  name: symptom-service
   namespace: default
 spec:
   selector:
-    app: appointment-service
+    app: symptom-service
   ports:
-    - port: 8083
-      targetPort: 8083
+    - port: 8091
+      targetPort: 8091
       protocol: TCP
   type: ClusterIP

@@ -1,0 +1,128 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app
+  namespace: default
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: web-app
+  template:
+    metadata:
+      labels:
+        app: web-app
+    spec:
+      containers:
+        - name: web-app
+          image: web-app:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            # ConfigMap vars
+            - name: NEXT_PUBLIC_AUTH_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_AUTH_SERVICE_URL
+            - name: NEXT_PUBLIC_PATIENT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_PATIENT_SERVICE_URL
+            - name: NEXT_PUBLIC_DOCTOR_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_DOCTOR_SERVICE_URL
+            - name: NEXT_PUBLIC_APPOINTMENT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_APPOINTMENT_SERVICE_URL
+            - name: NEXT_PUBLIC_PAYMENT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_PAYMENT_SERVICE_URL
+            - name: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+            - name: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: GOOGLE_CLIENT_ID
+            - name: LIVEKIT_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: LIVEKIT_URL
+            
+            # Secret vars
+            - name: NEXT_PUBLIC_FIREBASE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: NEXT_PUBLIC_FIREBASE_API_KEY
+            - name: STRIPE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: STRIPE_PUBLIC_KEY
+          
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-app
+  namespace: default
+spec:
+  selector:
+    app: web-app
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
+  type: LoadBalancer

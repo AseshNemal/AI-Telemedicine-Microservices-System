@@ -4,14 +4,7 @@ metadata:
   name: telemedicine-config
   namespace: default
 data:
-  AUTH_PORT: "8081"
-  DOCTOR_PORT: "8082"
-  APPOINTMENT_PORT: "8083"
-  NOTIFICATION_PORT: "8084"
-  TELEMEDICINE_PORT: "8086"
-  NOTIFICATION_SERVICE_URL: "http://notification-service:8084"
-  LIVEKIT_URL: "wss://<your-livekit-host>"
-  NEXT_PUBLIC_AUTH_SERVICE_URL: "http://localhost:8081"
-  NEXT_PUBLIC_DOCTOR_SERVICE_URL: "http://localhost:8082"
-  NEXT_PUBLIC_APPOINTMENT_SERVICE_URL: "http://localhost:8083"
-  NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL: "http://localhost:8086"
+  # NOTE: All environment variables are loaded from root .env file
+  # This ConfigMap is populated dynamically by deploy-k8s.sh script
+  # Do NOT edit values here - update root .env file instead
+  NODE_ENV: "production"
