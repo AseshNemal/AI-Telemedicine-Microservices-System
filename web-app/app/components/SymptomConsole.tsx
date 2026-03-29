@@ -85,7 +85,11 @@ const fallbackQuestionOptions: Array<{ hint: RegExp; options: string[] }> = [
 
 const maxDirectFollowUps = 3;
 
-export default function SymptomConsole() {
+type SymptomConsoleProps = {
+  onOpenVoice?: () => void;
+};
+
+export default function SymptomConsole({ onOpenVoice }: SymptomConsoleProps) {
   const [mode, setMode] = useState<ChatMode>("home");
   const [flowMode, setFlowMode] = useState<FlowMode>("idle");
 
@@ -496,6 +500,18 @@ export default function SymptomConsole() {
               </button>
             ))}
           </div>
+
+          {onOpenVoice && (
+            <div className="mt-5">
+              <button
+                type="button"
+                onClick={onOpenVoice}
+                className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+              >
+                Use Voice Assistant
+              </button>
+            </div>
+          )}
 
           {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
         </div>

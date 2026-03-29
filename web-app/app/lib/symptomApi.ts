@@ -26,13 +26,10 @@ export type SymptomChatResponse = {
   nextQuestion: SymptomNextQuestion | null;
 };
 
-const symptomBase =
-  process.env.NEXT_PUBLIC_SYMPTOM_SERVICE_URL ?? "http://localhost:8091";
-
 export async function chatSymptoms(
   payload: SymptomChatRequest,
 ): Promise<SymptomChatResponse> {
-  const res = await fetch(`${symptomBase}/symptoms/chat`, {
+  const res = await fetch(`/api/symptoms/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

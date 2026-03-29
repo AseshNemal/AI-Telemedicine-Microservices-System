@@ -189,7 +189,7 @@ services:
     networks:
       - telemedicine-net
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8091/api/symptom/health"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8091/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -263,6 +263,7 @@ services:
       - NEXT_PUBLIC_DOCTOR_SERVICE_URL=http://localhost:8082
       - NEXT_PUBLIC_APPOINTMENT_SERVICE_URL=http://localhost:8083
       - NEXT_PUBLIC_PAYMENT_SERVICE_URL=http://localhost:8085
+      - SYMPTOM_SERVICE_URL=http://symptom-service:8091
       - NODE_ENV=development
     ports:
       - "3000:3000"
