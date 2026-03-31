@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -107,7 +108,7 @@ type PaymentVerification struct {
 // VerifyPayment calls GET /payments/:transactionID on the payment-service to
 // confirm whether a Stripe checkout session has been completed.
 func (s *PaymentService) VerifyPayment(transactionID string) (*PaymentVerification, error) {
-	resp, err := s.httpClient.Get(s.baseURL + "/payments/" + transactionID)
+	resp, err := s.httpClient.Get(s.baseURL + "/payments/" + url.PathEscape(transactionID))
 	if err != nil {
 		return nil, fmt.Errorf("payment-service unreachable: %w", err)
 	}

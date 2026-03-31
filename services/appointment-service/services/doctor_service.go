@@ -32,6 +32,7 @@ func NewDoctorService(baseURL string) *DoctorService {
 type Doctor struct {
 	ID           string   `json:"id"`
 	Name         string   `json:"name"`
+	Email        string   `json:"email"`
 	Specialty    string   `json:"specialty"`
 	Hospital     string   `json:"hospital"`
 	Availability []string `json:"availability"`
