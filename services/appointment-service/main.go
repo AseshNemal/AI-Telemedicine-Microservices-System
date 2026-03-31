@@ -6,6 +6,7 @@ import (
 	"appointment-service/routes"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -22,9 +23,16 @@ func main() {
 	router := gin.Default()
 
 	// 4. CORS — restrict to known origins in production via APPOINTMENT_CORS_ORIGINS env var.
+	// Multiple origins may be specified as a comma-separated list.
 	allowedOrigins := []string{"http://localhost:3000", "http://127.0.0.1:3000"}
 	if envOrigins := os.Getenv("APPOINTMENT_CORS_ORIGINS"); envOrigins != "" {
-		allowedOrigins = []string{envOrigins}
+		parts := strings.Split(envOrigins, ",")
+		allowedOrigins = make([]string, 0, len(parts))
+		for _, o := range parts {
+			if trimmed := strings.TrimSpace(o); trimmed != "" {
+				allowedOrigins = append(allowedOrigins, trimmed)
+			}
+		}
 	}
 
 	router.Use(cors.New(cors.Config{
