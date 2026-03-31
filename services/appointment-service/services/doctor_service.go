@@ -3,12 +3,16 @@ package services
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"time"
 )
+
+// ErrDoctorNotFound is returned by GetDoctorByID when the doctor-service responds with 404.
+var ErrDoctorNotFound = errors.New("doctor not found")
 
 // DoctorService handles HTTP communication with the doctor-service.
 type DoctorService struct {
@@ -66,6 +70,11 @@ func (s *DoctorService) CheckAvailability(doctorID, date, timeSlot string) (bool
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return false, fmt.Errorf("doctor-service returned %d: %s", resp.StatusCode, string(body))
+	}
+
 	var result availabilityResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return false, fmt.Errorf("doctor-service bad response body: %w", err)
@@ -110,7 +119,7 @@ func (s *DoctorService) GetDoctorByID(doctorID string) (*Doctor, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("doctor not found: %s", doctorID)
+		return nil, fmt.Errorf("%w: %s", ErrDoctorNotFound, doctorID)
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
