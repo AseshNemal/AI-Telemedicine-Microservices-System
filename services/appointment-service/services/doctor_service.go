@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -20,6 +22,15 @@ func NewDoctorService(baseURL string) *DoctorService {
 		baseURL:    baseURL,
 		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
+}
+
+// Doctor is a lightweight representation of a doctor returned by the doctor-service.
+type Doctor struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Specialty    string   `json:"specialty"`
+	Hospital     string   `json:"hospital"`
+	Availability []string `json:"availability"`
 }
 
 type availabilityRequest struct {
@@ -61,4 +72,55 @@ func (s *DoctorService) CheckAvailability(doctorID, date, timeSlot string) (bool
 	}
 
 	return result.Available, nil
+}
+
+// SearchDoctors calls GET /doctors on the doctor service, optionally filtering by specialty.
+// Returns the raw JSON body so the appointment service can forward it directly to clients.
+func (s *DoctorService) SearchDoctors(specialty string) ([]Doctor, error) {
+	endpoint := s.baseURL + "/doctors"
+	if specialty != "" {
+		endpoint += "?specialty=" + url.QueryEscape(specialty)
+	}
+
+	resp, err := s.httpClient.Get(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("doctor-service unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("doctor-service returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var doctors []Doctor
+	if err := json.NewDecoder(resp.Body).Decode(&doctors); err != nil {
+		return nil, fmt.Errorf("doctor-service bad response body: %w", err)
+	}
+
+	return doctors, nil
+}
+
+// GetDoctorByID calls GET /doctor/:id on the doctor service.
+func (s *DoctorService) GetDoctorByID(doctorID string) (*Doctor, error) {
+	resp, err := s.httpClient.Get(s.baseURL + "/doctor/" + url.PathEscape(doctorID))
+	if err != nil {
+		return nil, fmt.Errorf("doctor-service unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("doctor not found: %s", doctorID)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("doctor-service returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var doctor Doctor
+	if err := json.NewDecoder(resp.Body).Decode(&doctor); err != nil {
+		return nil, fmt.Errorf("doctor-service bad response body: %w", err)
+	}
+
+	return &doctor, nil
 }
