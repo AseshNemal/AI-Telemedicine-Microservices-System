@@ -36,20 +36,35 @@ func Connect() *Client {
 		log.Fatalf("[appointment-service] mongo connect error: %v", err)
 	}
 
-	// derive DB name from URI (path portion)
-	dbName := "telemedicine"
-	if idx := strings.LastIndex(uri, "/"); idx != -1 {
-		rest := uri[idx+1:]
-		if q := strings.Index(rest, "?"); q != -1 {
-			dbName = rest[:q]
-		} else if rest != "" {
-			dbName = rest
+	// Derive DB name: explicit env var takes priority over URI path parsing.
+	dbName := os.Getenv("MONGO_DB_NAME")
+	if dbName == "" {
+		dbName = "telemedicine"
+		if idx := strings.LastIndex(uri, "/"); idx != -1 {
+			rest := uri[idx+1:]
+			if q := strings.Index(rest, "?"); q != -1 {
+				dbName = rest[:q]
+			} else if rest != "" {
+				dbName = rest
+			}
 		}
 	}
 
 	db := mc.Database(dbName)
 
 	return &Client{URI: uri, Connected: true, MongoClient: mc, DB: db}
+}
+
+// IsConnected performs a lightweight ping to verify MongoDB is reachable.
+// Use this instead of the Connected flag so stale post-startup disconnections
+// are detected on the actual request path.
+func (c *Client) IsConnected() bool {
+	if c.MongoClient == nil || c.DB == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	return c.MongoClient.Ping(ctx, nil) == nil
 }
 
 // EnsureIndexes creates all indexes required by the appointment service.
