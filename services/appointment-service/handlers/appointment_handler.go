@@ -75,12 +75,13 @@ func NewHandler(db *database.Client) *Handler {
 // ── Helper ──────────────────────────────────────────────────────────────────────
 
 func generateID(prefix string) string {
-	b := make([]byte, 2)
+	// Use 16 random bytes (128 bits) to ensure collision resistance, while
+	// retaining the timestamp component for readability.
+	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		b = []byte{0, 0}
+		b = make([]byte, 16) // zeroed fallback; rand.Read failure is extremely rare
 	}
-	// Format: APT-YYYYMMDD-HHMM-XXXX
-	// Example: APT-20260401-1430-a3f9
+	// Format: APT-YYYYMMDD-HHMM-<32-hex-char random suffix>
 	return fmt.Sprintf("%s-%s-%s", prefix, time.Now().Format("20060102-1504"), hex.EncodeToString(b))
 }
 
@@ -122,7 +123,7 @@ func (h *Handler) GetDoctorByID(c *gin.Context) {
 	doctor, err := h.doctorSvc.GetDoctorByID(id)
 	if err != nil {
 		log.Printf("[appointment-service] get doctor failed: %v", err)
-		if fmt.Sprintf("%v", err) == fmt.Sprintf("doctor not found: %s", id) {
+		if errors.Is(err, services.ErrDoctorNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}
@@ -213,18 +214,12 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 		return
 	}
 
-	// Generate the appointment ID before payment so it is recorded in the transaction.
+	// Generate the appointment ID.
 	appointmentID := generateID("APT")
 
-	// Step 5 – initiate Stripe payment session.
-	paymentResult, err := h.paymentSvc.InitiatePayment(appointmentID, patientID, req.DoctorID)
-	if err != nil {
-		log.Printf("[appointment-service] payment initiation failed: %v", err)
-		c.JSON(http.StatusPaymentRequired, gin.H{"error": "payment initiation failed", "details": err.Error()})
-		return
-	}
-
-	// Step 6 – persist to MongoDB.
+	// Step 5 – persist to MongoDB first (before initiating payment) so that a
+	// payment-service failure never creates an orphaned Stripe checkout session
+	// with no corresponding appointment record.
 	if !dbReady(h.db) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
 		return
@@ -234,8 +229,6 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 	req.ID = appointmentID
 	req.Status = models.StatusPendingPayment
 	req.PaymentStatus = models.PaymentPending
-	req.TransactionID = paymentResult.TransactionID
-	req.CheckoutURL = paymentResult.CheckoutURL
 	req.CreatedAt = now
 	req.UpdatedAt = now
 
@@ -250,16 +243,16 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 		"time":          req.Time,
 		"status":        req.Status,
 		"paymentStatus": req.PaymentStatus,
-		"transactionId": req.TransactionID,
-		"checkoutUrl":   req.CheckoutURL,
+		"transactionId": "",
+		"checkoutUrl":   "",
 		"createdAt":     req.CreatedAt,
 		"updatedAt":     req.UpdatedAt,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	insertCtx, insertCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer insertCancel()
 
-	if _, err := h.db.DB.Collection("appointments").InsertOne(ctx, doc); err != nil {
+	if _, err := h.db.DB.Collection("appointments").InsertOne(insertCtx, doc); err != nil {
 		// E11000 duplicate key → doctor slot already taken (race-condition safe).
 		if mongo.IsDuplicateKeyError(err) {
 			c.JSON(http.StatusConflict, gin.H{"error": "this doctor slot is already booked"})
@@ -268,6 +261,40 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 		log.Printf("[appointment-service] mongo insert failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save appointment", "details": err.Error()})
 		return
+	}
+
+	// Step 6 – initiate Stripe payment session. If this fails, delete the
+	// persisted appointment as a compensating action to avoid stranded records.
+	paymentResult, err := h.paymentSvc.InitiatePayment(appointmentID, patientID, req.DoctorID)
+	if err != nil {
+		log.Printf("[appointment-service] payment initiation failed for %s: %v — rolling back", appointmentID, err)
+		rollbackCtx, rollbackCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer rollbackCancel()
+		if _, delErr := h.db.DB.Collection("appointments").DeleteOne(rollbackCtx, bson.M{"id": appointmentID}); delErr != nil {
+			log.Printf("[appointment-service] rollback delete failed for %s: %v", appointmentID, delErr)
+		}
+		c.JSON(http.StatusPaymentRequired, gin.H{"error": "payment initiation failed", "details": err.Error()})
+		return
+	}
+
+	req.TransactionID = paymentResult.TransactionID
+	req.CheckoutURL = paymentResult.CheckoutURL
+
+	// Update the appointment record with the payment session details.
+	payUpdateCtx, payUpdateCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer payUpdateCancel()
+	if _, updErr := h.db.DB.Collection("appointments").UpdateOne(
+		payUpdateCtx,
+		bson.M{"id": appointmentID},
+		bson.M{"$set": bson.M{
+			"transactionId": req.TransactionID,
+			"checkoutUrl":   req.CheckoutURL,
+			"updatedAt":     time.Now(),
+		}},
+	); updErr != nil {
+		// Non-fatal: the appointment exists; the patient can still be guided to pay
+		// via a retry, but log so it can be investigated.
+		log.Printf("[appointment-service] failed to store payment details for %s: %v", appointmentID, updErr)
 	}
 
 	// Step 7 – fire-and-forget notification with payment link.
@@ -437,6 +464,13 @@ func (h *Handler) GetAppointmentByID(c *gin.Context) {
 		return
 	}
 
+	// Sanitize sensitive fields for non-payer roles before returning.
+	if role == roleDoctor {
+		appt.TransactionID = ""
+		appt.CheckoutURL = ""
+		appt.PatientEmail = ""
+	}
+
 	c.JSON(http.StatusOK, appt)
 }
 
@@ -497,6 +531,26 @@ func (h *Handler) GetMyAppointments(c *gin.Context) {
 		return
 	}
 
+	// Return a stripped-down projection for doctors to avoid leaking patient
+	// contact details and payment artifacts to a different principal.
+	if role == roleDoctor {
+		views := make([]models.DoctorAppointmentView, len(results))
+		for i, r := range results {
+			views[i] = models.DoctorAppointmentView{
+				ID:                   r.ID,
+				PatientName:          r.PatientName,
+				Specialty:            r.Specialty,
+				Date:                 r.Date,
+				Time:                 r.Time,
+				Status:               r.Status,
+				ConsultationRoomName: r.ConsultationRoomName,
+				CreatedAt:            r.CreatedAt,
+			}
+		}
+		c.JSON(http.StatusOK, views)
+		return
+	}
+
 	c.JSON(http.StatusOK, results)
 }
 
@@ -549,6 +603,10 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "doctors may only accept (BOOKED) or reject (REJECTED) appointments"})
 			return
 		}
+		if newStatus == models.StatusRejected && req.Reason == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "a reason is required when rejecting an appointment"})
+			return
+		}
 		// Note: state machine enforces that only CONFIRMED → BOOKED/REJECTED is valid.
 		// A PENDING_PAYMENT appointment cannot be accepted until the patient pays.
 
@@ -567,7 +625,10 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 		}
 
 	case roleAdmin:
-		// Admin may perform any valid transition; no additional restriction.
+		if newStatus == models.StatusCancelled && appt.IsStarted() {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot cancel an appointment that has already started"})
+			return
+		}
 
 	default:
 		c.JSON(http.StatusForbidden, gin.H{"error": "unknown role"})
@@ -603,6 +664,9 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 	}
 	if roomName != "" {
 		setFields["consultationRoomName"] = roomName
+	}
+	if newStatus == models.StatusRejected && req.Reason != "" {
+		setFields["rejectionReason"] = req.Reason
 	}
 
 	res, err := h.db.DB.Collection("appointments").UpdateOne(
