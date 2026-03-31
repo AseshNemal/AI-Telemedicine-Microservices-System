@@ -39,7 +39,7 @@ var ValidTransitions = map[string][]string{
 // Appointment represents a patient-doctor consultation booking persisted in MongoDB.
 type Appointment struct {
 	ID                   string    `json:"id"                   bson:"id"`
-	PatientID            string    `json:"patientId"            bson:"patientId"            binding:"required"`
+	PatientID            string    `json:"patientId"            bson:"patientId"`
 	PatientName          string    `json:"patientName"          bson:"patientName"          binding:"required"` // display name shown to doctor
 	PatientEmail         string    `json:"patientEmail"         bson:"patientEmail"         binding:"required"` // used for notifications
 	DoctorID             string    `json:"doctorId"             bson:"doctorId"             binding:"required"`
@@ -51,6 +51,7 @@ type Appointment struct {
 	TransactionID        string    `json:"transactionId"        bson:"transactionId"`        // payment-service transaction/session ID
 	CheckoutURL          string    `json:"checkoutUrl"          bson:"checkoutUrl"`          // Stripe checkout URL shown to patient
 	ConsultationRoomName string    `json:"consultationRoomName" bson:"consultationRoomName"` // LiveKit room name (set when BOOKED)
+	RejectionReason      string    `json:"rejectionReason,omitempty" bson:"rejectionReason,omitempty"` // Doctor's reason for rejecting
 	CreatedAt            time.Time `json:"createdAt"            bson:"createdAt"`
 	UpdatedAt            time.Time `json:"updatedAt"            bson:"updatedAt"`
 }
@@ -91,8 +92,23 @@ type RescheduleRequest struct {
 }
 
 // StatusUpdateRequest carries a new status value from the caller.
+// Reason is required when Status == REJECTED.
 type StatusUpdateRequest struct {
 	Status string `json:"status" binding:"required"`
+	Reason string `json:"reason"` // mandatory when Status == REJECTED
+}
+
+// DoctorAppointmentView is a read-only projection of an Appointment for doctor callers.
+// It omits payment artifacts and patient contact details.
+type DoctorAppointmentView struct {
+	ID                   string    `json:"id"`
+	PatientName          string    `json:"patientName"`
+	Specialty            string    `json:"specialty"`
+	Date                 string    `json:"date"`
+	Time                 string    `json:"time"`
+	Status               string    `json:"status"`
+	ConsultationRoomName string    `json:"consultationRoomName,omitempty"`
+	CreatedAt            time.Time `json:"createdAt"`
 }
 
 // ConfirmPaymentRequest is the body for POST /appointments/:id/confirm-payment.
