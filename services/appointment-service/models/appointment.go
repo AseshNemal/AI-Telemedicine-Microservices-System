@@ -43,14 +43,16 @@ type Appointment struct {
 	PatientName          string    `json:"patientName"          bson:"patientName"          binding:"required"` // display name shown to doctor
 	PatientEmail         string    `json:"patientEmail"         bson:"patientEmail"         binding:"required"` // used for notifications
 	DoctorID             string    `json:"doctorId"             bson:"doctorId"             binding:"required"`
+	DoctorName           string    `json:"doctorName"           bson:"doctorName"`                              // populated at booking time; used for human-readable notifications
+	DoctorEmail          string    `json:"doctorEmail"          bson:"doctorEmail"`                             // populated at booking time; used to notify doctor of reschedule
 	Specialty            string    `json:"specialty"            bson:"specialty"            binding:"required"` // e.g. "Cardiology"
 	Date                 string    `json:"date"                 bson:"date"                 binding:"required"` // YYYY-MM-DD
 	Time                 string    `json:"time"                 bson:"time"                 binding:"required"` // HH:MM (24-hour)
 	Status               string    `json:"status"               bson:"status"`
-	PaymentStatus        string    `json:"paymentStatus"        bson:"paymentStatus"`        // PENDING | COMPLETED | FAILED
-	TransactionID        string    `json:"transactionId"        bson:"transactionId"`        // payment-service transaction/session ID
-	CheckoutURL          string    `json:"checkoutUrl"          bson:"checkoutUrl"`          // Stripe checkout URL shown to patient
-	ConsultationRoomName string    `json:"consultationRoomName" bson:"consultationRoomName"` // LiveKit room name (set when BOOKED)
+	PaymentStatus        string    `json:"paymentStatus"        bson:"paymentStatus"`                  // PENDING | COMPLETED | FAILED
+	TransactionID        string    `json:"transactionId"        bson:"transactionId"`                  // payment-service transaction/session ID
+	CheckoutURL          string    `json:"checkoutUrl"          bson:"checkoutUrl"`                    // Stripe checkout URL shown to patient
+	ConsultationRoomName string    `json:"consultationRoomName" bson:"consultationRoomName"`           // LiveKit room name (set when BOOKED)
 	RejectionReason      string    `json:"rejectionReason,omitempty" bson:"rejectionReason,omitempty"` // Doctor's reason for rejecting
 	CreatedAt            time.Time `json:"createdAt"            bson:"createdAt"`
 	UpdatedAt            time.Time `json:"updatedAt"            bson:"updatedAt"`
@@ -66,18 +68,20 @@ func (a *Appointment) CanTransitionTo(next string) bool {
 	return false
 }
 
-// IsStarted reports whether the appointment's scheduled datetime is in the past.
+// IsStarted reports whether the appointment's scheduled datetime (interpreted as UTC) is in the past.
+// Returns true conservatively on parse failure so that a corrupt date/time cannot be used to
+// bypass the "no cancel after start" guard.
 func (a *Appointment) IsStarted() bool {
-	t, err := time.Parse("2006-01-02 15:04", a.Date+" "+a.Time)
+	t, err := time.ParseInLocation("2006-01-02 15:04", a.Date+" "+a.Time, time.UTC)
 	if err != nil {
-		return false
+		return true // conservative: treat unparseable time as already started
 	}
-	return time.Now().After(t)
+	return time.Now().UTC().After(t)
 }
 
-// ScheduledTime parses and returns the appointment's scheduled start time.
+// ScheduledTime parses and returns the appointment's scheduled start time in UTC.
 func (a *Appointment) ScheduledTime() time.Time {
-	t, _ := time.Parse("2006-01-02 15:04", a.Date+" "+a.Time)
+	t, _ := time.ParseInLocation("2006-01-02 15:04", a.Date+" "+a.Time, time.UTC)
 	return t
 }
 
