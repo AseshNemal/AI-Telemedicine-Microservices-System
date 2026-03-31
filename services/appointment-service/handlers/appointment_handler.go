@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"appointment-service/database"
+	"appointment-service/middleware"
 	"appointment-service/models"
 	"appointment-service/services"
 	"context"
@@ -12,6 +13,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -20,10 +24,6 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-// ── Context key constants (must match middleware/auth.go) ──────────────────────
-const ctxUID = "uid"
-const ctxRole = "role"
-
 // ── Role constants ──────────────────────────────────────────────────────────────
 const (
 	rolePatient = "PATIENT"
@@ -31,13 +31,20 @@ const (
 	roleAdmin   = "ADMIN"
 )
 
+// maxPendingBookings is the maximum number of PENDING_PAYMENT appointments a
+// single patient may hold simultaneously (slot-exhaustion guard, issue #16).
+const maxPendingBookings = 3
+
+// emailRegexp is a basic RFC5322-ish email format check.
+var emailRegexp = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+
 // Handler holds shared dependencies for all HTTP handlers.
 type Handler struct {
-	db            *database.Client
-	doctorSvc     *services.DoctorService
-	paymentSvc    *services.PaymentService
-	notifSvc      *services.NotificationService
-	telemediaSvc  *services.TelemedicineService
+	db           *database.Client
+	doctorSvc    *services.DoctorService
+	paymentSvc   *services.PaymentService
+	notifSvc     *services.NotificationService
+	telemediaSvc *services.TelemedicineService
 }
 
 // NewHandler wires up all downstream service clients from environment variables
@@ -82,21 +89,66 @@ func generateID(prefix string) string {
 		b = make([]byte, 16) // zeroed fallback; rand.Read failure is extremely rare
 	}
 	// Format: APT-YYYYMMDD-HHMM-<32-hex-char random suffix>
-	return fmt.Sprintf("%s-%s-%s", prefix, time.Now().Format("20060102-1504"), hex.EncodeToString(b))
+	return fmt.Sprintf("%s-%s-%s", prefix, time.Now().UTC().Format("20060102-1504"), hex.EncodeToString(b))
 }
 
+// dbReady performs a real MongoDB ping rather than trusting the stale Connected
+// flag — catches disconnections that occur after startup (issue #10).
 func dbReady(db *database.Client) bool {
-	return db != nil && db.Connected && db.DB != nil
+	return db != nil && db.IsConnected()
 }
 
 func callerUID(c *gin.Context) string {
-	uid, _ := c.Get(ctxUID)
+	uid, _ := c.Get(middleware.CtxUID)
 	return fmt.Sprint(uid)
 }
 
 func callerRole(c *gin.Context) string {
-	role, _ := c.Get(ctxRole)
+	role, _ := c.Get(middleware.CtxRole)
 	return fmt.Sprint(role)
+}
+
+// doctorDisplayName returns the doctor's name for display in notifications.
+// Falls back to the DoctorID for appointments created before DoctorName was stored.
+func doctorDisplayName(appt models.Appointment) string {
+	if appt.DoctorName != "" {
+		return appt.DoctorName
+	}
+	return appt.DoctorID
+}
+
+// validateID rejects obviously malformed appointment IDs before a DB round-trip (issue G2).
+// Returns false (and writes HTTP 400) when the id is empty or exceeds 128 characters.
+func validateID(c *gin.Context, id string) bool {
+	if id == "" || len(id) > 128 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid appointment id"})
+		return false
+	}
+	return true
+}
+
+// fetchAppointment consolidates the repeated dbReady-check → FindOne → decode → error-handling
+// block that previously appeared in six separate handlers (issue G2 deduplication).
+// Returns (appt, true) on success; (zero-value, false) when an error response has already
+// been written to c and the caller should return immediately.
+func (h *Handler) fetchAppointment(c *gin.Context, id string) (models.Appointment, bool) {
+	if !dbReady(h.db) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
+		return models.Appointment{}, false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var appt models.Appointment
+	err := h.db.DB.Collection("appointments").FindOne(ctx, bson.M{"id": id}).Decode(&appt)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "appointment not found"})
+		return models.Appointment{}, false
+	}
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch appointment", "details": err.Error()})
+		return models.Appointment{}, false
+	}
+	return appt, true
 }
 
 // ── Doctor search (proxied) ─────────────────────────────────────────────────────
@@ -166,16 +218,32 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "patientName is required"})
 		return
 	}
+	if len(req.PatientName) > 150 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "patientName must not exceed 150 characters"})
+		return
+	}
 	if req.PatientEmail == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "patientEmail is required"})
+		return
+	}
+	if !emailRegexp.MatchString(req.PatientEmail) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "patientEmail must be a valid email address"})
 		return
 	}
 	if req.DoctorID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "doctorId is required"})
 		return
 	}
+	if len(req.DoctorID) > 128 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "doctorId is invalid"})
+		return
+	}
 	if req.Specialty == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "specialty is required"})
+		return
+	}
+	if len(req.Specialty) > 100 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "specialty must not exceed 100 characters"})
 		return
 	}
 	if req.Date == "" || req.Time == "" {
@@ -184,20 +252,22 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 	}
 
 	// Step 3a – parse and validate date/time format.
-	scheduled, err := time.Parse("2006-01-02 15:04", req.Date+" "+req.Time)
+	// All times are treated as UTC to ensure consistent behaviour regardless
+	// of the server's local timezone (issue #4).
+	scheduled, err := time.ParseInLocation("2006-01-02 15:04", req.Date+" "+req.Time, time.UTC)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid date/time format; expected YYYY-MM-DD and HH:MM (24-hour)"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid date/time format; expected YYYY-MM-DD and HH:MM (24-hour UTC)"})
 		return
 	}
 
 	// Step 3b – must be at least 15 minutes in the future.
-	if time.Until(scheduled) < 15*time.Minute {
+	if scheduled.Sub(time.Now().UTC()) < 15*time.Minute {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "appointment must be scheduled at least 15 minutes in the future"})
 		return
 	}
 
 	// Step 3c – must NOT be more than 5 months ahead.
-	maxDate := time.Now().AddDate(0, 5, 0)
+	maxDate := time.Now().UTC().AddDate(0, 5, 0)
 	if scheduled.After(maxDate) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "appointment cannot be booked more than 5 months in advance"})
 		return
@@ -214,18 +284,46 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 		return
 	}
 
+	// Step 4b – fetch doctor name and email for human-readable notifications (graceful fallback to ID).
+	if doctorInfo, nameErr := h.doctorSvc.GetDoctorByID(req.DoctorID); nameErr != nil {
+		log.Printf("[appointment-service] could not fetch doctor name for %s: %v — using ID as display name", req.DoctorID, nameErr)
+		req.DoctorName = req.DoctorID
+	} else {
+		if doctorInfo.Name != "" {
+			req.DoctorName = doctorInfo.Name
+		} else {
+			req.DoctorName = req.DoctorID
+		}
+		req.DoctorEmail = doctorInfo.Email
+	}
+
 	// Generate the appointment ID.
 	appointmentID := generateID("APT")
 
-	// Step 5 – persist to MongoDB first (before initiating payment) so that a
-	// payment-service failure never creates an orphaned Stripe checkout session
-	// with no corresponding appointment record.
+	// Step 5 – check DB connectivity and enforce per-patient rate limit to
+	// prevent slot-exhaustion attacks (issue #16).
 	if !dbReady(h.db) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
 		return
 	}
 
-	now := time.Now()
+	pendingCtx, pendingCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer pendingCancel()
+	pendingCount, countErr := h.db.DB.Collection("appointments").CountDocuments(pendingCtx, bson.M{
+		"patientId": patientID,
+		"status":    models.StatusPendingPayment,
+	})
+	if countErr != nil {
+		log.Printf("[appointment-service] failed to count pending bookings for patient %s: %v", patientID, countErr)
+		// Non-fatal: proceed; the unique index remains the last line of defence.
+	} else if pendingCount >= maxPendingBookings {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error": fmt.Sprintf("you have %d incomplete bookings awaiting payment; complete or cancel them before booking again", maxPendingBookings),
+		})
+		return
+	}
+
+	now := time.Now().UTC()
 	req.ID = appointmentID
 	req.Status = models.StatusPendingPayment
 	req.PaymentStatus = models.PaymentPending
@@ -238,6 +336,8 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 		"patientName":   req.PatientName,
 		"patientEmail":  req.PatientEmail,
 		"doctorId":      req.DoctorID,
+		"doctorName":    req.DoctorName,
+		"doctorEmail":   req.DoctorEmail,
 		"specialty":     req.Specialty,
 		"date":          req.Date,
 		"time":          req.Time,
@@ -281,6 +381,8 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 	req.CheckoutURL = paymentResult.CheckoutURL
 
 	// Update the appointment record with the payment session details.
+	// This is treated as fatal: if we cannot persist the transactionId, the
+	// appointment has no path to confirmation, so we roll back (issue #1).
 	payUpdateCtx, payUpdateCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer payUpdateCancel()
 	if _, updErr := h.db.DB.Collection("appointments").UpdateOne(
@@ -289,16 +391,21 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 		bson.M{"$set": bson.M{
 			"transactionId": req.TransactionID,
 			"checkoutUrl":   req.CheckoutURL,
-			"updatedAt":     time.Now(),
+			"updatedAt":     time.Now().UTC(),
 		}},
 	); updErr != nil {
-		// Non-fatal: the appointment exists; the patient can still be guided to pay
-		// via a retry, but log so it can be investigated.
-		log.Printf("[appointment-service] failed to store payment details for %s: %v", appointmentID, updErr)
+		log.Printf("[appointment-service] failed to store payment details for %s: %v — rolling back", appointmentID, updErr)
+		rollback2Ctx, rollback2Cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer rollback2Cancel()
+		if _, delErr := h.db.DB.Collection("appointments").DeleteOne(rollback2Ctx, bson.M{"id": appointmentID}); delErr != nil {
+			log.Printf("[appointment-service] rollback delete failed for %s: %v", appointmentID, delErr)
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to persist payment details; please retry booking"})
+		return
 	}
 
 	// Step 7 – fire-and-forget notification with payment link.
-	go h.notifSvc.SendBookingConfirmation(req.ID, req.PatientEmail, req.PatientName, req.DoctorID, req.Specialty, req.Date, req.Time, req.CheckoutURL)
+	go h.notifSvc.SendBookingConfirmation(req.ID, req.PatientEmail, req.PatientName, doctorDisplayName(req), req.Specialty, req.Date, req.Time, req.CheckoutURL)
 
 	// Step 8 – return the appointment with the checkout URL the patient must visit.
 	c.JSON(http.StatusCreated, gin.H{
@@ -332,29 +439,23 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 //  6. Return the confirmed appointment details.
 func (h *Handler) ConfirmPayment(c *gin.Context) {
 	id := c.Param("id")
-
-	if !dbReady(h.db) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
+	if !validateID(c, id) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var appt models.Appointment
-	err := h.db.DB.Collection("appointments").FindOne(ctx, bson.M{"id": id}).Decode(&appt)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "appointment not found"})
-		return
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch appointment", "details": err.Error()})
+	appt, ok := h.fetchAppointment(c, id)
+	if !ok {
 		return
 	}
 
 	uid := callerUID(c)
 	role := callerRole(c)
 
+	// Doctors cannot confirm patient payments (defence in depth; routes also enforce this) (issue G3).
+	if role == roleDoctor {
+		c.JSON(http.StatusForbidden, gin.H{"error": "doctors cannot confirm patient payments"})
+		return
+	}
 	if role == rolePatient && appt.PatientID != uid {
 		c.JSON(http.StatusForbidden, gin.H{"error": "you are not the patient for this appointment"})
 		return
@@ -398,7 +499,7 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 		bson.M{"$set": bson.M{
 			"status":        models.StatusConfirmed,
 			"paymentStatus": models.PaymentCompleted,
-			"updatedAt":     time.Now(),
+			"updatedAt":     time.Now().UTC(),
 		}},
 	)
 	if err != nil {
@@ -411,7 +512,7 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 	}
 
 	// Notify the patient: payment successful, appointment confirmed.
-	go h.notifSvc.SendPaymentConfirmation(appt.ID, appt.PatientEmail, appt.PatientName, appt.DoctorID, appt.Specialty, appt.Date, appt.Time)
+	go h.notifSvc.SendPaymentConfirmation(appt.ID, appt.PatientEmail, appt.PatientName, doctorDisplayName(appt), appt.Specialty, appt.Date, appt.Time)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Payment confirmed. Your appointment is now confirmed and awaiting the doctor's acceptance.",
@@ -432,23 +533,12 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 // PATIENT may only see their own; DOCTOR may only see theirs; ADMIN sees any.
 func (h *Handler) GetAppointmentByID(c *gin.Context) {
 	id := c.Param("id")
-
-	if !dbReady(h.db) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
+	if !validateID(c, id) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var appt models.Appointment
-	err := h.db.DB.Collection("appointments").FindOne(ctx, bson.M{"id": id}).Decode(&appt)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "appointment not found"})
-		return
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch appointment", "details": err.Error()})
+	appt, ok := h.fetchAppointment(c, id)
+	if !ok {
 		return
 	}
 
@@ -460,6 +550,10 @@ func (h *Handler) GetAppointmentByID(c *gin.Context) {
 		return
 	}
 	if role == roleDoctor && appt.DoctorID != uid {
+		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		return
+	}
+	if role != rolePatient && role != roleDoctor && role != roleAdmin {
 		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
 		return
 	}
@@ -492,6 +586,24 @@ func (h *Handler) GetMyAppointments(c *gin.Context) {
 	role := callerRole(c)
 	statusFilter := c.Query("status")
 
+	// Validate status query param against known values (issue #15).
+	if statusFilter != "" {
+		validStatuses := map[string]bool{
+			models.StatusPendingPayment: true,
+			models.StatusConfirmed:      true,
+			models.StatusBooked:         true,
+			models.StatusRejected:       true,
+			models.StatusCancelled:      true,
+			models.StatusCompleted:      true,
+		}
+		if !validStatuses[statusFilter] {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("unknown status %q; valid values: PENDING_PAYMENT, CONFIRMED, BOOKED, REJECTED, CANCELLED, COMPLETED", statusFilter),
+			})
+			return
+		}
+	}
+
 	filter := bson.D{}
 	switch role {
 	case rolePatient:
@@ -509,6 +621,18 @@ func (h *Handler) GetMyAppointments(c *gin.Context) {
 		filter = append(filter, bson.E{Key: "status", Value: statusFilter})
 	}
 
+	// Pagination for all roles: ?page=1&limit=50 (max 100) (issue #B6).
+	// Admin defaults to 50; patient/doctor default to 50 but can adjust up to 100.
+	page := 1
+	limit := int64(50)
+	if p, _ := strconv.Atoi(c.Query("page")); p > 0 {
+		page = p
+	}
+	if l, _ := strconv.Atoi(c.Query("limit")); l > 0 && l <= 100 {
+		limit = int64(l)
+	}
+	skip := int64(page-1) * limit
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -517,7 +641,7 @@ func (h *Handler) GetMyAppointments(c *gin.Context) {
 	sortOpts := options.Find().SetSort(bson.D{
 		{Key: "date", Value: 1},
 		{Key: "time", Value: 1},
-	})
+	}).SetSkip(skip).SetLimit(limit)
 
 	cursor, err := h.db.DB.Collection("appointments").Find(ctx, filter, sortOpts)
 	if err != nil {
@@ -561,6 +685,9 @@ func (h *Handler) GetMyAppointments(c *gin.Context) {
 // ADMIN may: any valid transition.
 func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 	id := c.Param("id")
+	if !validateID(c, id) {
+		return
+	}
 
 	var req models.StatusUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -568,23 +695,8 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 		return
 	}
 
-	if !dbReady(h.db) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Fetch the current appointment.
-	var appt models.Appointment
-	err := h.db.DB.Collection("appointments").FindOne(ctx, bson.M{"id": id}).Decode(&appt)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "appointment not found"})
-		return
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch appointment", "details": err.Error()})
+	appt, ok := h.fetchAppointment(c, id)
+	if !ok {
 		return
 	}
 
@@ -599,8 +711,8 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "you are not the doctor for this appointment"})
 			return
 		}
-		if newStatus != models.StatusBooked && newStatus != models.StatusRejected {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "doctors may only accept (BOOKED) or reject (REJECTED) appointments"})
+		if newStatus != models.StatusBooked && newStatus != models.StatusRejected && newStatus != models.StatusCompleted {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "doctors may only accept (BOOKED), reject (REJECTED), or complete (COMPLETED) appointments"})
 			return
 		}
 		if newStatus == models.StatusRejected && req.Reason == "" {
@@ -629,6 +741,12 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot cancel an appointment that has already started"})
 			return
 		}
+		// Prevent bypassing the payment verification flow: PENDING_PAYMENT → CONFIRMED
+		// must go through POST /appointments/:id/confirm-payment (issue #3).
+		if appt.Status == models.StatusPendingPayment && newStatus == models.StatusConfirmed {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "use POST /appointments/:id/confirm-payment to confirm a paid appointment"})
+			return
+		}
 
 	default:
 		c.JSON(http.StatusForbidden, gin.H{"error": "unknown role"})
@@ -643,16 +761,9 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 		return
 	}
 
-	// ── If doctor is accepting: create a LiveKit consultation room ────────────
-	var roomName string
-	if newStatus == models.StatusBooked {
-		roomName, err = h.telemediaSvc.CreateRoom(appt.ID)
-		if err != nil {
-			log.Printf("[appointment-service] failed to create consultation room for %s: %v", appt.ID, err)
-			// Non-fatal: proceed without a room rather than blocking acceptance.
-			roomName = ""
-		}
-	}
+	// ── If doctor is accepting: do NOT create the LiveKit room yet.
+	// Room creation happens AFTER the DB write succeeds to avoid orphaned rooms
+	// if the optimistic concurrency guard fires (issue B1).
 
 	// ── Persist ────────────────────────────────────────────────────────────────
 	updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -660,10 +771,7 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 
 	setFields := bson.M{
 		"status":    newStatus,
-		"updatedAt": time.Now(),
-	}
-	if roomName != "" {
-		setFields["consultationRoomName"] = roomName
+		"updatedAt": time.Now().UTC(),
 	}
 	if newStatus == models.StatusRejected && req.Reason != "" {
 		setFields["rejectionReason"] = req.Reason
@@ -684,8 +792,33 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 		return
 	}
 
+	// ── Create LiveKit room AFTER successful DB write (issue B1) ────────────
+	// Only now is it safe to create the room; the DB record is authoritative.
+	var roomName string
+	if newStatus == models.StatusBooked {
+		var createErr error
+		roomName, createErr = h.telemediaSvc.CreateRoom(appt.ID)
+		if createErr != nil {
+			log.Printf("[appointment-service] failed to create consultation room for %s: %v", appt.ID, createErr)
+			// Non-fatal: the appointment is already BOOKED in the DB.
+			// The room will be created lazily when GetConsultationToken is called.
+			roomName = ""
+		} else if roomName != "" {
+			// Persist the room name into the appointment record.
+			roomCtx, roomCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer roomCancel()
+			if _, roomErr := h.db.DB.Collection("appointments").UpdateOne(
+				roomCtx,
+				bson.M{"id": id},
+				bson.M{"$set": bson.M{"consultationRoomName": roomName, "updatedAt": time.Now().UTC()}},
+			); roomErr != nil {
+				log.Printf("[appointment-service] failed to persist consultationRoomName for %s: %v", id, roomErr)
+			}
+		}
+	}
+
 	// Fire-and-forget notification.
-	go h.notifSvc.SendStatusUpdate(appt.ID, appt.PatientEmail, appt.DoctorID, appt.Date, appt.Time, newStatus)
+	go h.notifSvc.SendStatusUpdate(appt.ID, appt.PatientEmail, doctorDisplayName(appt), appt.Date, appt.Time, newStatus, req.Reason)
 
 	resp := gin.H{"message": "status updated", "id": id, "status": newStatus}
 	if roomName != "" {
@@ -706,6 +839,9 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 //   - Doctor availability on the new slot is re-validated (graceful fallback).
 func (h *Handler) RescheduleAppointment(c *gin.Context) {
 	id := c.Param("id")
+	if !validateID(c, id) {
+		return
+	}
 
 	var req models.RescheduleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -713,42 +849,35 @@ func (h *Handler) RescheduleAppointment(c *gin.Context) {
 		return
 	}
 
+	// Reject whitespace-only reason (issue B8).
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.Reason == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "reason must not be blank"})
+		return
+	}
+
 	// Validate new date/time format.
-	scheduled, err := time.Parse("2006-01-02 15:04", req.Date+" "+req.Time)
+	scheduled, err := time.ParseInLocation("2006-01-02 15:04", req.Date+" "+req.Time, time.UTC)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid date/time format; expected YYYY-MM-DD and HH:MM (24-hour)"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid date/time format; expected YYYY-MM-DD and HH:MM (24-hour UTC)"})
 		return
 	}
 
 	// New slot must be at least 15 minutes in the future.
-	if time.Until(scheduled) < 15*time.Minute {
+	if scheduled.Sub(time.Now().UTC()) < 15*time.Minute {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "rescheduled slot must be at least 15 minutes in the future"})
 		return
 	}
 
 	// New slot must be within the 5-month booking window.
-	maxDate := time.Now().AddDate(0, 5, 0)
+	maxDate := time.Now().UTC().AddDate(0, 5, 0)
 	if scheduled.After(maxDate) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "appointment cannot be rescheduled more than 5 months in advance"})
 		return
 	}
 
-	if !dbReady(h.db) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var appt models.Appointment
-	err = h.db.DB.Collection("appointments").FindOne(ctx, bson.M{"id": id}).Decode(&appt)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "appointment not found"})
-		return
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch appointment", "details": err.Error()})
+	appt, ok := h.fetchAppointment(c, id)
+	if !ok {
 		return
 	}
 
@@ -783,6 +912,12 @@ func (h *Handler) RescheduleAppointment(c *gin.Context) {
 		return
 	}
 
+	// Reject pointless reschedule to the exact same slot (issue #22).
+	if req.Date == appt.Date && req.Time == appt.Time {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "the new slot is the same as the current appointment time; no change made"})
+		return
+	}
+
 	// Update the appointment. Optimistic concurrency: match current status to prevent races.
 	updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer updateCancel()
@@ -791,10 +926,11 @@ func (h *Handler) RescheduleAppointment(c *gin.Context) {
 		updateCtx,
 		bson.M{"id": id, "status": appt.Status}, // optimistic guard
 		bson.M{"$set": bson.M{
-			"date":      req.Date,
-			"time":      req.Time,
-			"status":    models.StatusConfirmed, // payment already done; doctor must re-accept the new slot
-			"updatedAt": time.Now(),
+			"date":                 req.Date,
+			"time":                 req.Time,
+			"status":               models.StatusConfirmed, // payment already done; doctor must re-accept the new slot
+			"consultationRoomName": "",                     // clear stale LiveKit room from previous BOOKED state (issue #6)
+			"updatedAt":            time.Now().UTC(),
 		}},
 	)
 	if err != nil {
@@ -812,8 +948,11 @@ func (h *Handler) RescheduleAppointment(c *gin.Context) {
 
 	log.Printf("[appointment-service] appointment %s rescheduled by patient %s to %s %s (reason: %s)", id, uid, req.Date, req.Time, req.Reason)
 
-	// Fire-and-forget notification.
-	go h.notifSvc.SendRescheduleNotification(appt.ID, appt.PatientEmail, appt.DoctorID, req.Date, req.Time)
+	// Fire-and-forget notifications: patient confirmation + doctor alert (issue B7).
+	go h.notifSvc.SendRescheduleNotification(appt.ID, appt.PatientEmail, doctorDisplayName(appt), req.Date, req.Time)
+	if appt.DoctorEmail != "" {
+		go h.notifSvc.SendDoctorRescheduleAlert(appt.ID, appt.DoctorEmail, appt.PatientName, req.Date, req.Time)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "appointment rescheduled; awaiting doctor re-confirmation",
@@ -830,23 +969,12 @@ func (h *Handler) RescheduleAppointment(c *gin.Context) {
 // business rules as UpdateAppointmentStatus with status=CANCELLED.
 func (h *Handler) CancelAppointment(c *gin.Context) {
 	id := c.Param("id")
-
-	if !dbReady(h.db) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
+	if !validateID(c, id) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var appt models.Appointment
-	err := h.db.DB.Collection("appointments").FindOne(ctx, bson.M{"id": id}).Decode(&appt)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "appointment not found"})
-		return
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch appointment", "details": err.Error()})
+	appt, ok := h.fetchAppointment(c, id)
+	if !ok {
 		return
 	}
 
@@ -879,7 +1007,7 @@ func (h *Handler) CancelAppointment(c *gin.Context) {
 		bson.M{"id": id, "status": appt.Status},
 		bson.M{"$set": bson.M{
 			"status":    models.StatusCancelled,
-			"updatedAt": time.Now(),
+			"updatedAt": time.Now().UTC(),
 		}},
 	)
 	if err != nil {
@@ -891,7 +1019,7 @@ func (h *Handler) CancelAppointment(c *gin.Context) {
 		return
 	}
 
-	go h.notifSvc.SendStatusUpdate(appt.ID, appt.PatientEmail, appt.DoctorID, appt.Date, appt.Time, models.StatusCancelled)
+	go h.notifSvc.SendStatusUpdate(appt.ID, appt.PatientEmail, doctorDisplayName(appt), appt.Date, appt.Time, models.StatusCancelled, "")
 
 	c.JSON(http.StatusOK, gin.H{"message": "appointment cancelled", "id": id})
 }
@@ -906,23 +1034,12 @@ func (h *Handler) CancelAppointment(c *gin.Context) {
 // LiveKit room; when omitted it defaults to the caller's uid.
 func (h *Handler) GetConsultationToken(c *gin.Context) {
 	id := c.Param("id")
-
-	if !dbReady(h.db) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
+	if !validateID(c, id) {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var appt models.Appointment
-	err := h.db.DB.Collection("appointments").FindOne(ctx, bson.M{"id": id}).Decode(&appt)
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "appointment not found"})
-		return
-	}
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch appointment", "details": err.Error()})
+	appt, ok := h.fetchAppointment(c, id)
+	if !ok {
 		return
 	}
 
@@ -959,10 +1076,38 @@ func (h *Handler) GetConsultationToken(c *gin.Context) {
 		return
 	}
 
-	// Use optional ?name= query param as the LiveKit display name.
-	displayName := c.Query("name")
+	// Enforce consultation access window: 30 min before to 2 hours after scheduled time (issue #12).
+	scheduled := appt.ScheduledTime()
+	now := time.Now().UTC()
+	windowStart := scheduled.Add(-30 * time.Minute)
+	windowEnd := scheduled.Add(2 * time.Hour)
+	if now.Before(windowStart) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": fmt.Sprintf("consultation room is not yet open; you may join from %s UTC", windowStart.Format("2006-01-02 15:04")),
+		})
+		return
+	}
+	if now.After(windowEnd) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "consultation window has closed"})
+		return
+	}
+
+	// Sanitize optional ?name= query param for the LiveKit display name (issue #13, B5, B10).
+	displayName := strings.TrimSpace(c.Query("name"))
 	if displayName == "" {
 		displayName = uid
+	} else {
+		// Truncate by rune count (not bytes) to avoid splitting multi-byte UTF-8 (issue B5).
+		runes := []rune(displayName)
+		if len(runes) > 100 {
+			displayName = string(runes[:100])
+		}
+		for _, r := range displayName {
+			if r < 32 || r == 127 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "display name contains invalid characters"})
+				return
+			}
+		}
 	}
 
 	token, err := h.telemediaSvc.GetJoinToken(appt.ConsultationRoomName, uid, displayName)
@@ -983,8 +1128,7 @@ func (h *Handler) GetConsultationToken(c *gin.Context) {
 // Health returns a liveness probe for the service.
 func (h *Handler) Health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"service":     "appointment-service",
-		"status":      "OK",
-		"dbConnected": dbReady(h.db),
+		"service": "appointment-service",
+		"status":  "OK",
 	})
 }
