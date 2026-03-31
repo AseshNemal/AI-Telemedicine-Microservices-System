@@ -27,11 +27,15 @@ func main() {
 	allowedOrigins := []string{"http://localhost:3000", "http://127.0.0.1:3000"}
 	if envOrigins := os.Getenv("APPOINTMENT_CORS_ORIGINS"); envOrigins != "" {
 		parts := strings.Split(envOrigins, ",")
-		allowedOrigins = make([]string, 0, len(parts))
+		parsed := make([]string, 0, len(parts))
 		for _, o := range parts {
 			if trimmed := strings.TrimSpace(o); trimmed != "" {
-				allowedOrigins = append(allowedOrigins, trimmed)
+				parsed = append(parsed, trimmed)
 			}
+		}
+		// Only adopt the env-var list if it produced at least one valid origin (issue B11).
+		if len(parsed) > 0 {
+			allowedOrigins = parsed
 		}
 	}
 
