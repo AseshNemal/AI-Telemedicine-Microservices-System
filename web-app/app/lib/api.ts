@@ -9,10 +9,17 @@ export type Doctor = {
 export type Appointment = {
   id: string;
   patientId: string;
+  patientName?: string;
+  patientEmail?: string;
   doctorId: string;
+  doctorName?: string;
+  specialty?: string;
   date: string;
   time: string;
   status: string;
+  paymentStatus?: string;
+  transactionId?: string;
+  checkoutUrl?: string;
 };
 
 export type PatientProfile = {
@@ -193,6 +200,25 @@ export async function getConsultationToken(id: string, idToken: string): Promise
   if (!res.ok) {
     const message = await safeMessage(res);
     throw new Error(message || `Failed to get consultation token (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function confirmAppointmentPayment(
+  id: string,
+  idToken: string
+): Promise<{ message: string; appointment: Appointment }> {
+  const res = await fetch(`${appointmentBase}/appointments/${encodeURIComponent(id)}/confirm-payment`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to confirm payment (${res.status})`);
   }
 
   return res.json();

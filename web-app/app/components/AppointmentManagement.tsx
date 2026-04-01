@@ -4,10 +4,12 @@ import { useEffect, useState, FormEvent } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   Appointment,
+  getAppointmentByID,
   getAppointments,
   rescheduleAppointment,
   cancelAppointment,
   getConsultationToken,
+  confirmAppointmentPayment,
 } from "@/app/lib/api";
 import { getFirebaseAuth } from "@/app/lib/firebaseClient";
 
@@ -128,6 +130,55 @@ export default function AppointmentManagement() {
     }
   }
 
+  async function handlePayNow(apt: Appointment) {
+    if (!idToken) {
+      setError("Please login first to continue payment.");
+      return;
+    }
+
+    setError(null);
+
+    // Prefer list payload, then fetch detail as fallback.
+    let checkoutUrl = apt.checkoutUrl || "";
+    if (!checkoutUrl) {
+      try {
+        const detailed = await getAppointmentByID(apt.id, idToken);
+        checkoutUrl = detailed.checkoutUrl || "";
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load payment link");
+        return;
+      }
+    }
+
+    if (!checkoutUrl) {
+      setError("No checkout link found for this appointment.");
+      return;
+    }
+
+    window.location.href = checkoutUrl;
+  }
+
+  async function handleConfirmPayment(id: string) {
+    if (!idToken) {
+      setError("Please login first to confirm payment.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const result = await confirmAppointmentPayment(id, idToken);
+      setMessage(result.message || "Payment confirmed.");
+      await loadAppointments();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to confirm payment");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // Initialize
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -234,6 +285,17 @@ export default function AppointmentManagement() {
                 >
                   Manage
                 </button>
+                {apt.status === "PENDING_PAYMENT" && (
+                  <button
+                    className="btn-primary ml-2 text-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handlePayNow(apt);
+                    }}
+                  >
+                    Pay now
+                  </button>
+                )}
               </div>
             </article>
           ))}
@@ -262,6 +324,28 @@ export default function AppointmentManagement() {
           </div>
 
           <div className="mt-6 flex flex-wrap gap-2">
+            {selectedAppointment.status === "PENDING_PAYMENT" && (
+              <>
+                <button
+                  className="btn-primary text-sm"
+                  onClick={() => {
+                    void handlePayNow(selectedAppointment);
+                  }}
+                  disabled={loading}
+                >
+                  Pay now
+                </button>
+                <button
+                  className="btn-secondary text-sm"
+                  onClick={() => {
+                    void handleConfirmPayment(selectedAppointment.id);
+                  }}
+                  disabled={loading}
+                >
+                  I have paid
+                </button>
+              </>
+            )}
             {(selectedAppointment.status === "CONFIRMED" || selectedAppointment.status === "ACCEPTED") && (
               <>
                 <button
