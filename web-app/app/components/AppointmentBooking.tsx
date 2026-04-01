@@ -17,6 +17,8 @@ export default function AppointmentBooking() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [latestCheckoutUrl, setLatestCheckoutUrl] = useState<string | null>(null);
+  const [latestAppointmentId, setLatestAppointmentId] = useState<string | null>(null);
   const [idToken, setIdToken] = useState<string | null>(null);
   const [patientName, setPatientName] = useState("");
   const [patientEmail, setPatientEmail] = useState("");
@@ -67,6 +69,8 @@ export default function AppointmentBooking() {
     setLoading(true);
     setError(null);
     setMessage(null);
+    setLatestCheckoutUrl(null);
+    setLatestAppointmentId(null);
 
     try {
       const appointment = await createAppointment({
@@ -78,6 +82,14 @@ export default function AppointmentBooking() {
         time,
       }, idToken);
       setMessage(`✓ Appointment booked successfully (ID: ${appointment.id})`);
+      if (appointment.checkoutUrl) {
+        setLatestCheckoutUrl(appointment.checkoutUrl);
+      }
+      if (appointment.appointment && appointment.appointment.id) {
+        setLatestAppointmentId(appointment.appointment.id);
+      } else if (appointment.id) {
+        setLatestAppointmentId(appointment.id);
+      }
       setDate("");
       setTime("");
       setSelectedDoctor(null);
@@ -145,6 +157,17 @@ export default function AppointmentBooking() {
 
           {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
           {message && <p className="mt-4 text-sm text-green-600">{message}</p>}
+          {latestCheckoutUrl && (
+            <button
+              type="button"
+              className="btn-primary mt-3"
+              onClick={() => {
+                window.location.href = latestCheckoutUrl;
+              }}
+            >
+              Proceed to payment{latestAppointmentId ? ` (${latestAppointmentId})` : ""}
+            </button>
+          )}
 
           <div className="mt-6 grid gap-3 md:grid-cols-2">
             {loading && !doctors.length && <p className="text-sm text-slate-600">Loading doctors...</p>}
