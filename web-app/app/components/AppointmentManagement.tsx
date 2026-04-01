@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, FormEvent } from "react";
+import { onAuthStateChanged } from "firebase/auth";
 import {
   Appointment,
   getAppointments,
@@ -8,6 +9,7 @@ import {
   cancelAppointment,
   getConsultationToken,
 } from "@/app/lib/api";
+import { getFirebaseAuth } from "@/app/lib/firebaseClient";
 
 type AppointmentAction = "view" | "reschedule" | "join" | null;
 
@@ -16,6 +18,7 @@ export default function AppointmentManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [idToken, setIdToken] = useState<string | null>(null);
 
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [action, setAction] = useState<AppointmentAction>(null);
@@ -26,11 +29,19 @@ export default function AppointmentManagement() {
   const [rescheduleReason, setRescheduleReason] = useState("");
 
   // Load appointments
-  async function loadAppointments() {
+  async function loadAppointments(tokenOverride?: string) {
+    const token = tokenOverride || idToken;
+    if (!token) {
+      setLoading(false);
+      setAppointments([]);
+      setError("Please login first to view your appointments.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
-      const data = await getAppointments();
+      const data = await getAppointments(token);
       setAppointments(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load appointments");
@@ -43,6 +54,10 @@ export default function AppointmentManagement() {
   async function handleReschedule(e: FormEvent) {
     e.preventDefault();
     if (!selectedAppointment) return;
+    if (!idToken) {
+      setError("Please login first to reschedule appointments.");
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -53,7 +68,7 @@ export default function AppointmentManagement() {
         date: newDate,
         time: newTime,
         reason: rescheduleReason,
-      });
+      }, idToken);
       setMessage("✓ Appointment rescheduled successfully");
       setSelectedAppointment(updated);
       setAction(null);
@@ -70,6 +85,10 @@ export default function AppointmentManagement() {
 
   // Handle cancel
   async function handleCancel(id: string) {
+    if (!idToken) {
+      setError("Please login first to cancel appointments.");
+      return;
+    }
     if (!confirm("Are you sure you want to cancel this appointment?")) return;
 
     setLoading(true);
@@ -77,7 +96,7 @@ export default function AppointmentManagement() {
     setMessage(null);
 
     try {
-      await cancelAppointment(id);
+      await cancelAppointment(id, idToken);
       setMessage("✓ Appointment cancelled successfully");
       setSelectedAppointment(null);
       setAction(null);
@@ -91,11 +110,15 @@ export default function AppointmentManagement() {
 
   // Handle join consultation
   async function handleJoinConsultation(id: string) {
+    if (!idToken) {
+      setError("Please login first to join consultation.");
+      return;
+    }
     setLoading(true);
     setError(null);
 
     try {
-      const result = await getConsultationToken(id);
+      const result = await getConsultationToken(id, idToken);
       setMessage(`✓ Token generated: ${result.token.substring(0, 20)}...`);
       // In a real app, you would use this token to join a LiveKit room
     } catch (err) {
@@ -107,7 +130,22 @@ export default function AppointmentManagement() {
 
   // Initialize
   useEffect(() => {
-    loadAppointments();
+    const auth = getFirebaseAuth();
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setIdToken(null);
+        setAppointments([]);
+        setLoading(false);
+        setError("Please login first to view your appointments.");
+        return;
+      }
+
+      const token = await user.getIdToken();
+      setIdToken(token);
+      await loadAppointments(token);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   // Format date/time for display
@@ -147,7 +185,9 @@ export default function AppointmentManagement() {
         <p className="mt-2 text-sm text-slate-600">View, reschedule, or manage your upcoming and past appointments.</p>
         <button
           className="btn-secondary mt-4"
-          onClick={loadAppointments}
+          onClick={() => {
+            void loadAppointments();
+          }}
           disabled={loading}
         >
           Refresh

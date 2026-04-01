@@ -1,12 +1,13 @@
 "use client";
 
 import { FormEvent, useState, useEffect } from "react";
+import { onAuthStateChanged } from "firebase/auth";
 import {
   Doctor,
-  Appointment,
   getDoctors,
   createAppointment,
 } from "@/app/lib/api";
+import { getFirebaseAuth } from "@/app/lib/firebaseClient";
 
 export default function AppointmentBooking() {
   const [step, setStep] = useState<"doctors" | "booking">("doctors");
@@ -16,9 +17,11 @@ export default function AppointmentBooking() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [idToken, setIdToken] = useState<string | null>(null);
+  const [patientName, setPatientName] = useState("");
+  const [patientEmail, setPatientEmail] = useState("");
 
   // Booking form state
-  const [patientId, setPatientId] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
 
@@ -52,6 +55,14 @@ export default function AppointmentBooking() {
   async function handleBookAppointment(e: FormEvent) {
     e.preventDefault();
     if (!selectedDoctor) return;
+    if (!idToken) {
+      setError("Please login first to book an appointment.");
+      return;
+    }
+    if (!patientName || !patientEmail) {
+      setError("Your profile is missing name or email. Please re-login.");
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -59,15 +70,16 @@ export default function AppointmentBooking() {
 
     try {
       const appointment = await createAppointment({
-        patientId,
+        patientName,
+        patientEmail,
         doctorId: selectedDoctor.id,
+        specialty: selectedDoctor.specialty,
         date,
         time,
-      });
+      }, idToken);
       setMessage(`✓ Appointment booked successfully (ID: ${appointment.id})`);
       setDate("");
       setTime("");
-      setPatientId("");
       setSelectedDoctor(null);
       setStep("doctors");
     } catch (err) {
@@ -80,6 +92,23 @@ export default function AppointmentBooking() {
   // Initialize on mount
   useEffect(() => {
     loadDoctors();
+
+    const auth = getFirebaseAuth();
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setIdToken(null);
+        setPatientName("");
+        setPatientEmail("");
+        return;
+      }
+
+      const token = await user.getIdToken();
+      setIdToken(token);
+      setPatientName(user.displayName || user.email?.split("@")[0] || "Patient");
+      setPatientEmail(user.email || "");
+    });
+
+    return () => unsubscribe();
   }, []);
 
   return (
@@ -171,9 +200,17 @@ export default function AppointmentBooking() {
               <input
                 type="text"
                 className="field-input"
-                placeholder="Patient ID (e.g. PAT-1234)"
-                value={patientId}
-                onChange={(e) => setPatientId(e.target.value)}
+                placeholder="Patient name"
+                value={patientName}
+                onChange={(e) => setPatientName(e.target.value)}
+                required
+              />
+              <input
+                type="email"
+                className="field-input"
+                placeholder="Patient email"
+                value={patientEmail}
+                onChange={(e) => setPatientEmail(e.target.value)}
                 required
               />
               <input

@@ -98,7 +98,6 @@ export async function createAppointment(payload: {
   return res.json();
 }
 
-export async function getAppointments(): Promise<Appointment[]> {
 export async function getAppointments(idToken: string): Promise<Appointment[]> {
   const res = await fetch(`${appointmentBase}/appointments/my`, {
     cache: "no-store",

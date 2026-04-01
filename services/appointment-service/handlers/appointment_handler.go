@@ -52,22 +52,22 @@ type Handler struct {
 func NewHandler(db *database.Client) *Handler {
 	doctorBase := os.Getenv("DOCTOR_SERVICE_URL")
 	if doctorBase == "" {
-		doctorBase = "http://doctor-service:8082"
+		doctorBase = "http://localhost:8082"
 	}
 
 	paymentBase := os.Getenv("PAYMENT_SERVICE_URL")
 	if paymentBase == "" {
-		paymentBase = "http://payment-service:8085"
+		paymentBase = "http://localhost:8085"
 	}
 
 	notifBase := os.Getenv("NOTIFICATION_SERVICE_URL")
 	if notifBase == "" {
-		notifBase = "http://notification-service:8084"
+		notifBase = "http://localhost:8084"
 	}
 
 	telemediaBase := os.Getenv("TELEMEDICINE_SERVICE_URL")
 	if telemediaBase == "" {
-		telemediaBase = "http://telemedicine-service:8086"
+		telemediaBase = "http://localhost:8086"
 	}
 
 	return &Handler{
