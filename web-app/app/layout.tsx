@@ -46,6 +46,7 @@ export default function RootLayout({
               </Link>
               <div className="flex flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-sm">
                 <Link href="/auth" className="rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Access</Link>
+                <Link href="/patient/profile" className="rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Profile</Link>
                 <Link href="/doctors" className="rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Doctors</Link>
                 <Link href="/appointments" className="rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Appointments</Link>
                 <Link href="/payments" className="rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Payments</Link>

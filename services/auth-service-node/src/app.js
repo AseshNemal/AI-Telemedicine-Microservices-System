@@ -6,6 +6,10 @@ const swaggerUi = require('swagger-ui-express');
 
 const errorHandler = require('./middleware/errorHandler');
 const authRoutes = require('./routes/authRoutes');
+const authController = require('./controllers/authController');
+const { registerValidation } = require('./middleware/authValidation');
+const validateRequest = require('./middleware/validateRequest');
+const { authenticateFirebaseToken } = require('./middleware/authMiddleware');
 const swaggerSpec = require('./docs/swagger');
 
 const app = express();
@@ -26,6 +30,11 @@ app.get('/health', (req, res) => {
 
 // Routes
 app.use('/api/auth', authRoutes);
+
+// Backwards-compatible root routes (some clients call /register, /me directly)
+app.post('/register', registerValidation, validateRequest, authController.register);
+app.get('/me', authenticateFirebaseToken, authController.me);
+app.post('/logout', authenticateFirebaseToken, authController.logout);
 
 // 404
 app.use((req, res) => {
