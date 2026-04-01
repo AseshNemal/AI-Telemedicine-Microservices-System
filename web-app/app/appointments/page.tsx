@@ -1,9 +1,7 @@
-import AppointmentConsole from "@/app/components/AppointmentConsole";
-import { getAppointments } from "@/app/lib/api";
+import AppointmentBooking from "@/app/components/AppointmentBooking";
+import AppointmentManagement from "@/app/components/AppointmentManagement";
 
-export default async function AppointmentsPage() {
-  const initialAppointments = await getAppointments().catch(() => []);
-
+export default function AppointmentsPage() {
   return (
     <main className="page-shell">
       <section className="hero-shell">
@@ -17,23 +15,26 @@ export default async function AppointmentsPage() {
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
           <article className="rounded-2xl border border-slate-200 bg-white/90 p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">01</p>
-            <h3 className="mt-1 text-sm font-semibold text-slate-900">Select clinician</h3>
-            <p className="mt-1 text-xs text-slate-600">Choose the doctor aligned to your case.</p>
+            <h3 className="mt-1 text-sm font-semibold text-slate-900">Find clinician</h3>
+            <p className="mt-1 text-xs text-slate-600">Search and select the doctor for your needs.</p>
           </article>
           <article className="rounded-2xl border border-slate-200 bg-white/90 p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">02</p>
             <h3 className="mt-1 text-sm font-semibold text-slate-900">Pick slot</h3>
-            <p className="mt-1 text-xs text-slate-600">Set your preferred date and consultation time.</p>
+            <p className="mt-1 text-xs text-slate-600">Set your preferred date and time for consultation.</p>
           </article>
           <article className="rounded-2xl border border-slate-200 bg-white/90 p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">03</p>
             <h3 className="mt-1 text-sm font-semibold text-slate-900">Get confirmed</h3>
-            <p className="mt-1 text-xs text-slate-600">Track status and prepare for your visit.</p>
+            <p className="mt-1 text-xs text-slate-600">Manage and join your booked appointments.</p>
           </article>
         </div>
       </section>
 
-      <AppointmentConsole initialAppointments={initialAppointments} />
+      <div className="mt-12 grid gap-12 lg:grid-cols-2">
+        <AppointmentBooking />
+        <AppointmentManagement />
+      </div>
     </main>
   );
 }

@@ -21,6 +21,9 @@ func NewHandler(db *database.Client) *Handler {
 
 func (h *Handler) GetDoctors(c *gin.Context) {
 	specialty := c.Query("specialty")
+	// Allow browser requests from local frontend during development
+	c.Header("Access-Control-Allow-Origin", "http://localhost:3000")
+	c.Header("Access-Control-Allow-Credentials", "true")
 	// Require database; no in-memory fallback
 	if h.db == nil || !h.db.Connected || h.db.DB == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})

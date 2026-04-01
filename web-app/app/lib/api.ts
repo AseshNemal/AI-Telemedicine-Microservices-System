@@ -79,10 +79,80 @@ export async function createAppointment(payload: {
 }
 
 export async function getAppointments(): Promise<Appointment[]> {
-  const res = await fetch(`${appointmentBase}/appointments`, { cache: "no-store" });
+  const res = await fetch(`${appointmentBase}/appointments/my`, { cache: "no-store" });
   if (!res.ok) {
     throw new Error(`Failed to fetch appointments (${res.status})`);
   }
+  return res.json();
+}
+
+export async function getAppointmentByID(id: string): Promise<Appointment> {
+  const res = await fetch(`${appointmentBase}/appointments/${encodeURIComponent(id)}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch appointment (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function rescheduleAppointment(
+  id: string,
+  payload: { date: string; time: string; reason: string }
+): Promise<Appointment> {
+  const res = await fetch(`${appointmentBase}/appointments/${encodeURIComponent(id)}/reschedule`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to reschedule appointment (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function cancelAppointment(id: string): Promise<void> {
+  const res = await fetch(`${appointmentBase}/appointments/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to cancel appointment (${res.status})`);
+  }
+}
+
+export async function updateAppointmentStatus(
+  id: string,
+  payload: { status: "ACCEPTED" | "REJECTED" | "CANCELLED" }
+): Promise<Appointment> {
+  const res = await fetch(`${appointmentBase}/appointments/${encodeURIComponent(id)}/status`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to update appointment status (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function getConsultationToken(id: string): Promise<{ token: string }> {
+  const res = await fetch(`${appointmentBase}/appointments/${encodeURIComponent(id)}/consultation-token`, {
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to get consultation token (${res.status})`);
+  }
+
   return res.json();
 }
 
