@@ -1,9 +1,10 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getMe, register } from "@/app/lib/api";
 import { getFirebaseAuth, getGoogleProvider } from "@/app/lib/firebaseClient";
+import { getDashboardPathForRole } from "@/app/lib/roleRouting";
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -16,6 +17,11 @@ export default function AuthPage() {
   const [loginMessage, setLoginMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const loginFormRef = useRef<HTMLFormElement | null>(null);
+
+  const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? "";
+  const adminPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD ?? "";
+  const hasAdminDemoCredentials = Boolean(adminEmail && adminPassword);
 
   function toFriendlyError(err: unknown) {
     if (!(err instanceof Error)) {
@@ -51,19 +57,11 @@ export default function AuthPage() {
     setLoading(true);
 
     const form = new FormData(e.currentTarget);
-    const roleMap = {
-      Patient: "PATIENT",
-      Doctor: "DOCTOR",
-      Admin: "ADMIN",
-    } as const;
-
-    const selectedRole = String(form.get("role") || "Patient") as keyof typeof roleMap;
-
     const payload = {
       fullName: String(form.get("name") || ""),
       email: String(form.get("email") || ""),
       password: String(form.get("password") || ""),
-      role: roleMap[selectedRole] || "PATIENT",
+      role: "PATIENT" as const,
     };
 
     try {
@@ -81,9 +79,7 @@ export default function AuthPage() {
 
       setRegisterMessage(response.message || "Registered");
       setLoginMessage(`Account created and signed in as ${role}.`);
-      if (role === "PATIENT") {
-        router.push("/patient/profile");
-      }
+      router.push(getDashboardPathForRole(role));
     } catch (err) {
       setError(toFriendlyError(err));
     } finally {
@@ -109,9 +105,7 @@ export default function AuthPage() {
       const me = await getMe(idToken);
       const role = me?.data?.role || "USER";
       setLoginMessage(`Signed in successfully as ${role}. Your care dashboard is ready.`);
-      if (role === "PATIENT") {
-        router.push("/patient/profile");
-      }
+      router.push(getDashboardPathForRole(role));
     } catch (err) {
       setError(toFriendlyError(err));
     } finally {
@@ -132,13 +126,33 @@ export default function AuthPage() {
       const me = await getMe(idToken);
       const role = me?.data?.role || "USER";
       setLoginMessage(`Google sign-in successful as ${role}. Welcome, ${result.user.displayName || "user"}.`);
-      if (role === "PATIENT") {
-        router.push("/patient/profile");
-      }
+      router.push(getDashboardPathForRole(role));
     } catch (err) {
       setError(toFriendlyError(err));
     } finally {
       setLoading(false);
+    }
+  }
+
+  function fillAdminDemoCredentials() {
+    if (!hasAdminDemoCredentials) {
+      setError("Admin demo credentials are not configured in environment variables.");
+      return;
+    }
+
+    const form = loginFormRef.current;
+    if (!form) {
+      return;
+    }
+
+    const emailInput = form.elements.namedItem("email");
+    const passwordInput = form.elements.namedItem("password");
+
+    if (emailInput instanceof HTMLInputElement) {
+      emailInput.value = adminEmail;
+    }
+    if (passwordInput instanceof HTMLInputElement) {
+      passwordInput.value = adminPassword;
     }
   }
 
@@ -197,7 +211,7 @@ export default function AuthPage() {
               </div>
 
               {mode === "login" ? (
-                <form onSubmit={onLogin} className="space-y-4">
+                <form ref={loginFormRef} onSubmit={onLogin} className="space-y-4">
                   <div>
                     <h2 className="text-3xl font-extrabold text-slate-900">Welcome back</h2>
                     <p className="text-slate-600">Login with your Firebase credentials.</p>
@@ -239,12 +253,29 @@ export default function AuthPage() {
                   >
                     Continue with Google
                   </button>
+
+                  {hasAdminDemoCredentials && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={fillAdminDemoCredentials}
+                        disabled={loading}
+                        className="h-10 w-full rounded-xl border border-dashed border-cyan-300 bg-cyan-50 px-4 text-xs font-semibold text-cyan-800 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Use admin demo credentials
+                      </button>
+
+                      <p className="text-xs text-slate-500">
+                        Admin demo email: <span className="font-semibold text-slate-700">{adminEmail}</span>. Doctor and admin accounts route to dedicated dashboards after sign-in.
+                      </p>
+                    </>
+                  )}
                 </form>
               ) : (
                 <form onSubmit={onRegister} className="space-y-4">
                   <div>
                     <h2 className="text-3xl font-extrabold text-slate-900">Create account</h2>
-                    <p className="text-slate-600">Register in auth-service and sign in instantly.</p>
+                    <p className="text-slate-600">Patient registration only. Doctors and admins are provisioned by staff.</p>
                   </div>
 
                   <input
@@ -267,14 +298,9 @@ export default function AuthPage() {
                     className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500"
                     required
                   />
-                  <select
-                    name="role"
-                    className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500"
-                  >
-                    <option>Patient</option>
-                    <option>Doctor</option>
-                    <option>Admin</option>
-                  </select>
+                  <p className="rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs text-cyan-900">
+                    This form creates patient accounts only.
+                  </p>
 
                   <button
                     className="h-11 w-full rounded-xl bg-amber-500 px-4 text-sm font-bold text-slate-900 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"

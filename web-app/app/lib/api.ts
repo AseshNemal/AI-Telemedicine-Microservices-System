@@ -60,6 +60,51 @@ export type PaymentVerifyResponse = {
   status: string;
 };
 
+export type DoctorAccountCreateRequest = {
+  fullName: string;
+  email: string;
+  password: string;
+  specialty: string;
+  hospital: string;
+  availability: string[];
+};
+
+export type TelemedicineCreateRoomRequest = {
+  roomName: string;
+  emptyTimeout?: number;
+  maxParticipants?: number;
+  metadata?: string;
+};
+
+export type TelemedicineCreateTokenRequest = {
+  roomName: string;
+  participantIdentity: string;
+  participantName?: string;
+  metadata?: string;
+  ttlSeconds?: number;
+  canPublish?: boolean;
+  canSubscribe?: boolean;
+  canPublishData?: boolean;
+};
+
+export type TelemedicineTokenResponse = {
+  token: string;
+  wsUrl: string;
+  roomName: string;
+  participantIdentity: string;
+  participantName: string;
+  expiresInSeconds: number;
+};
+
+export type TelemedicineRoomResponse = {
+  name: string;
+  sid: string;
+  emptyTimeout: number;
+  maxParticipants: number;
+  creationTime: number;
+  metadata: string;
+};
+
 const doctorBase =
   process.env.NEXT_PUBLIC_DOCTOR_SERVICE_URL ?? "http://localhost:8082";
 const appointmentBase =
@@ -70,6 +115,8 @@ const patientBase =
   process.env.NEXT_PUBLIC_PATIENT_SERVICE_URL ?? "http://localhost:5002";
 const paymentBase =
   process.env.NEXT_PUBLIC_PAYMENT_SERVICE_URL ?? "http://localhost:8085";
+const telemedicineBase =
+  process.env.NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL ?? "http://localhost:8086";
 
 export async function getDoctors(specialty?: string): Promise<Doctor[]> {
   const query = specialty ? `?specialty=${encodeURIComponent(specialty)}` : "";
@@ -115,7 +162,8 @@ export async function getAppointments(idToken: string): Promise<Appointment[]> {
   if (!res.ok) {
     throw new Error(`Failed to fetch appointments (${res.status})`);
   }
-  return res.json();
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
 }
 
 export async function getAppointmentByID(id: string, idToken: string): Promise<Appointment> {
@@ -337,6 +385,39 @@ export async function createPayment(payload: PaymentCreateRequest): Promise<Paym
   return res.json();
 }
 
+export async function createDoctorAccount(payload: DoctorAccountCreateRequest) {
+  const authResult = await register({
+    fullName: payload.fullName,
+    email: payload.email,
+    password: payload.password,
+    role: "DOCTOR",
+  });
+
+  const doctorId = authResult?.data?.uid || authResult?.uid || "";
+
+  const res = await fetch(`${doctorBase}/doctor`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      id: doctorId,
+      name: payload.fullName,
+      specialty: payload.specialty,
+      hospital: payload.hospital,
+      availability: payload.availability,
+    }),
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to create doctor profile (${res.status})`);
+  }
+
+  return {
+    auth: authResult,
+    doctor: await res.json(),
+  };
+}
+
 export async function verifyPayment(sessionId: string): Promise<PaymentVerifyResponse> {
   const res = await fetch(`${paymentBase}/payments/verify?session_id=${encodeURIComponent(sessionId)}`, {
     method: "GET",
@@ -346,6 +427,40 @@ export async function verifyPayment(sessionId: string): Promise<PaymentVerifyRes
   if (!res.ok) {
     const message = await safeMessage(res);
     throw new Error(message || `Failed to verify payment (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function createTelemedicineRoom(
+  payload: TelemedicineCreateRoomRequest,
+): Promise<TelemedicineRoomResponse> {
+  const res = await fetch(`${telemedicineBase}/telemedicine/rooms`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to create room (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function createTelemedicineToken(
+  payload: TelemedicineCreateTokenRequest,
+): Promise<TelemedicineTokenResponse> {
+  const res = await fetch(`${telemedicineBase}/telemedicine/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to create token (${res.status})`);
   }
 
   return res.json();

@@ -47,6 +47,10 @@ export default function AppointmentBooking() {
     await loadDoctors(specialty);
   }
 
+  function doctorKey(doctor: Doctor, index: number) {
+    return doctor.id || `${doctor.name}-${doctor.specialty}-${index}`;
+  }
+
   // Select doctor and move to booking
   function selectDoctor(doctor: Doctor) {
     setSelectedDoctor(doctor);
@@ -174,9 +178,9 @@ export default function AppointmentBooking() {
             {!loading && doctors.length === 0 && (
               <p className="text-sm text-slate-500">No doctors found. Try a different search or view all.</p>
             )}
-            {doctors.map((doctor) => (
+            {doctors.map((doctor, index) => (
               <article
-                key={doctor.id}
+                key={doctorKey(doctor, index)}
                 className="cursor-pointer rounded-2xl border border-slate-200 bg-white/90 p-4 transition hover:border-blue-400 hover:shadow-md"
                 onClick={() => selectDoctor(doctor)}
               >

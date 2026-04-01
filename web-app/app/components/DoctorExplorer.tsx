@@ -22,6 +22,10 @@ export default function DoctorExplorer() {
     }
   }
 
+  function doctorKey(doctor: Doctor, index: number) {
+    return doctor.id || `${doctor.name}-${doctor.specialty}-${index}`;
+  }
+
   useEffect(() => {
     loadDoctors();
   }, []);
@@ -65,8 +69,8 @@ export default function DoctorExplorer() {
 
       {!loading && !error && (
         <div className="grid gap-3 md:grid-cols-2">
-          {doctors.map((doctor) => (
-            <article key={doctor.id} className="surface-card">
+          {doctors.map((doctor, index) => (
+            <article key={doctorKey(doctor, index)} className="surface-card">
               <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{doctor.specialty}</p>
               <h3 className="mt-1 text-lg font-semibold text-slate-900">{doctor.name}</h3>
               <p className="mt-1 text-sm text-slate-600">{doctor.hospital}</p>

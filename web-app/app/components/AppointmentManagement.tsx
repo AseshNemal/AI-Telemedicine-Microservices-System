@@ -44,8 +44,9 @@ export default function AppointmentManagement() {
     setError(null);
     try {
       const data = await getAppointments(token);
-      setAppointments(data);
+      setAppointments(Array.isArray(data) ? data : []);
     } catch (err) {
+      setAppointments([]);
       setError(err instanceof Error ? err.message : "Failed to load appointments");
     } finally {
       setLoading(false);
