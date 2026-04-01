@@ -85,7 +85,20 @@ func (c *Client) EnsureIndexes() {
 
 	coll := c.DB.Collection("appointments")
 
-	indexModel := mongo.IndexModel{
+	ensureIndex := func(model mongo.IndexModel) {
+		if _, err := coll.Indexes().CreateOne(ctx, model); err != nil {
+			log.Printf("[appointment-service] index creation warning (may already exist): %v", err)
+		}
+	}
+
+	// Unique appointment ID.
+	ensureIndex(mongo.IndexModel{
+		Keys:    bson.D{{Key: "id", Value: 1}},
+		Options: options.Index().SetUnique(true).SetName("ux_appointment_id"),
+	})
+
+	// Unique doctor-slot for active appointments only (prevents double-booking).
+	ensureIndex(mongo.IndexModel{
 		Keys: bson.D{
 			{Key: "doctorId", Value: 1},
 			{Key: "date", Value: 1},
@@ -94,19 +107,28 @@ func (c *Client) EnsureIndexes() {
 		Options: options.Index().
 			SetUnique(true).
 			SetName("ux_doctor_slot_active").
-			// Only enforce uniqueness for active (non-terminal) appointments so that
-			// cancelled/rejected slots can be legitimately rebooked.
 			SetPartialFilterExpression(bson.D{
 				{Key: "status", Value: bson.D{
 					{Key: "$in", Value: bson.A{"PENDING_PAYMENT", "CONFIRMED", "BOOKED"}},
 				}},
 			}),
-	}
+	})
 
-	if _, err := coll.Indexes().CreateOne(ctx, indexModel); err != nil {
-		// Log a warning but do not abort: the index may already exist.
-		log.Printf("[appointment-service] index creation warning (may already exist): %v", err)
-	} else {
-		log.Println("[appointment-service] unique doctor-slot index ensured")
-	}
+	// Patient lookup indexes.
+	ensureIndex(mongo.IndexModel{
+		Keys:    bson.D{{Key: "patientId", Value: 1}},
+		Options: options.Index().SetName("ix_patient_id"),
+	})
+	ensureIndex(mongo.IndexModel{
+		Keys:    bson.D{{Key: "patientId", Value: 1}, {Key: "status", Value: 1}},
+		Options: options.Index().SetName("ix_patient_status"),
+	})
+
+	// Doctor lookup index.
+	ensureIndex(mongo.IndexModel{
+		Keys:    bson.D{{Key: "doctorId", Value: 1}},
+		Options: options.Index().SetName("ix_doctor_id"),
+	})
+
+	log.Println("[appointment-service] EnsureIndexes completed")
 }
