@@ -28,6 +28,10 @@ func RegisterRoutes(router *gin.Engine, h *handlers.Handler) {
 	// ── Public ────────────────────────────────────────────────────────────────
 	router.GET("/health", h.Health)
 
+	// Internal service-to-service endpoint used by payment-service after Stripe
+	// verification. Guarded by INTERNAL_SERVICE_KEY in handler.
+	router.POST("/internal/appointments/:id/confirm-payment", h.ConfirmPaymentInternal)
+
 	// ── Authenticated ─────────────────────────────────────────────────────────
 	auth := router.Group("/")
 	auth.Use(middleware.VerifyToken())

@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { verifyPayment } from "@/app/lib/api";
+import { verifyPayment, confirmAppointmentPayment } from "@/app/lib/api";
+import { getFirebaseAuth } from "@/app/lib/firebaseClient";
 
 function PaymentSuccessContent() {
   const params = useSearchParams();
@@ -21,14 +22,37 @@ function PaymentSuccessContent() {
         return;
       }
 
-      try {
-        const result = await verifyPayment(sessionId);
-        setMessage(result.message || "Payment verified");
-        setStatus(result.status);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Payment verification failed");
-        setMessage("Verification failed.");
-      }
+        try {
+          const result = await verifyPayment(sessionId);
+          setMessage(result.message || "Payment verified");
+          setStatus(result.status);
+
+          // If payment is completed and we have an appointmentId, attempt to
+          // auto-confirm the appointment so the UI updates and payment buttons
+          // are removed without requiring a manual "I have paid" click.
+          if (result.status === "COMPLETED") {
+            const maybe = result as unknown as { appointmentId?: string };
+            if (maybe.appointmentId) {
+              const appointmentId = maybe.appointmentId as string;
+              try {
+                const auth = getFirebaseAuth();
+                const user = auth.currentUser;
+                if (user) {
+                  const idToken = await user.getIdToken();
+                  await confirmAppointmentPayment(appointmentId, idToken);
+                  setMessage((prev) => (prev ? prev + " — appointment confirmed." : "Appointment confirmed."));
+                } else {
+                  setMessage((prev) => (prev ? prev + " — please sign in to finalize appointment confirmation." : "Please sign in to finalize appointment confirmation."));
+                }
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "Failed to auto-confirm appointment");
+              }
+            }
+          }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "Payment verification failed");
+          setMessage("Verification failed.");
+        }
     }
 
     runVerification();
