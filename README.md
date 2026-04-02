@@ -337,6 +337,50 @@ Apply with your cluster context:
 
 All services are automatically accessible through the API Gateway LoadBalancer service.
 
+## Kubernetes Quick Run (Recommended)
+
+Use the helper script from repo root to build images, deploy manifests, wait for rollout, and run a gateway health check.
+
+1. Enable Kubernetes in Docker Desktop.
+2. Run from repo root:
+
+```bash
+chmod +x k8s-up.sh
+./k8s-up.sh
+```
+
+3. Optional: expose API Gateway on localhost:
+
+```bash
+kubectl port-forward -n default svc/api-gateway-nginx 8080:80
+```
+
+4. Verify:
+
+```bash
+kubectl get pods -n default
+curl http://localhost:8080/health
+```
+
+Useful script flags:
+
+```bash
+./k8s-up.sh --skip-build
+./k8s-up.sh --port-forward --port 8080
+./k8s-up.sh --help
+```
+
+Teardown:
+
+```bash
+kubectl delete -f deployments/kubernetes/
+```
+
+Troubleshooting:
+
+- If `./k8s-up.sh` says `Cannot connect to Kubernetes API server`, enable Kubernetes in Docker Desktop and retry.
+- If a service image fails to build, rebuild that image locally first, then rerun `./k8s-up.sh --skip-build`.
+
 ## Run a single service (developer mode)
 
 During development each team member can run one service locally instead of the whole stack. This is useful when a member is responsible for a single microservice. Steps below assume you have Go installed and `.env` configured at the repo root.

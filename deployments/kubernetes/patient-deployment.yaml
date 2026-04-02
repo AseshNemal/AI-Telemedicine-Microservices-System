@@ -76,7 +76,7 @@ spec:
           
           livenessProbe:
             httpGet:
-              path: /api/patients/health
+              path: /health
               port: 5002
             initialDelaySeconds: 30
             periodSeconds: 10
@@ -85,7 +85,7 @@ spec:
           
           readinessProbe:
             httpGet:
-              path: /api/patients/health
+              path: /health
               port: 5002
             initialDelaySeconds: 10
             periodSeconds: 5
@@ -93,16 +93,10 @@ spec:
             failureThreshold: 2
           
           volumeMounts:
-            - name: firebase-secret
-              mountPath: /var/secrets/firebase
-              readOnly: true
             - name: uploads
               mountPath: /app/uploads
       
       volumes:
-        - name: firebase-secret
-          secret:
-            secretName: firebase-service-account
         - name: uploads
           emptyDir: {}
 

@@ -71,7 +71,7 @@ spec:
           
           livenessProbe:
             httpGet:
-              path: /api/notifications/health
+              path: /health
               port: 8084
             initialDelaySeconds: 30
             periodSeconds: 10
@@ -80,7 +80,7 @@ spec:
           
           readinessProbe:
             httpGet:
-              path: /api/notifications/health
+              path: /health
               port: 8084
             initialDelaySeconds: 10
             periodSeconds: 5

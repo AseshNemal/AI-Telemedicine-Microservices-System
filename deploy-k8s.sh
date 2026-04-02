@@ -29,7 +29,9 @@ fi
 
 # Load environment variables from .env
 echo -e "${YELLOW}Loading environment variables from .env...${NC}"
-export $(cat "$ENV_FILE" | grep -v '#' | xargs)
+set -a
+. "$ENV_FILE"
+set +a
 echo -e "${GREEN}✓ Environment loaded${NC}\n"
 
 # Check if kubectl is installed
@@ -72,7 +74,9 @@ PUBLIC_VARS=(
     "NOTIFICATION_PORT"
     "PAYMENT_PORT"
     "TELEMEDICINE_PORT"
+    "SYMPTOM_SERVICE_PORT"
     "NODE_ENV"
+    "NOTIFICATION_SERVICE_URL"
     "NEXT_PUBLIC_AUTH_SERVICE_URL"
     "NEXT_PUBLIC_PATIENT_SERVICE_URL"
     "NEXT_PUBLIC_DOCTOR_SERVICE_URL"
@@ -80,31 +84,48 @@ PUBLIC_VARS=(
     "NEXT_PUBLIC_PAYMENT_SERVICE_URL"
     "NEXT_PUBLIC_FIREBASE_PROJECT_ID"
     "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN"
+    "GOOGLE_CLIENT_ID"
     "LIVEKIT_URL"
     "FIREBASE_PROJECT_ID"
 )
 
-# Build ConfigMap from variables
-CONFIGMAP_DATA=""
+# Build ConfigMap from variables, falling back to safe defaults when .env omits a key
+config_default() {
+    case "$1" in
+        AUTH_PORT) echo "${AUTH_PORT:-5001}" ;;
+        PATIENT_PORT) echo "${PATIENT_PORT:-5002}" ;;
+        DOCTOR_PORT) echo "${DOCTOR_PORT:-8082}" ;;
+        APPOINTMENT_PORT) echo "${APPOINTMENT_PORT:-8083}" ;;
+        NOTIFICATION_PORT) echo "${NOTIFICATION_PORT:-8084}" ;;
+        PAYMENT_PORT) echo "${PAYMENT_PORT:-8085}" ;;
+        TELEMEDICINE_PORT) echo "${TELEMEDICINE_PORT:-8086}" ;;
+        SYMPTOM_SERVICE_PORT) echo "${SYMPTOM_SERVICE_PORT:-8091}" ;;
+        NODE_ENV) echo "${NODE_ENV:-production}" ;;
+        NOTIFICATION_SERVICE_URL) echo "${NOTIFICATION_SERVICE_URL:-http://notification-service:8084}" ;;
+        NEXT_PUBLIC_AUTH_SERVICE_URL) echo "http://localhost" ;;
+        NEXT_PUBLIC_PATIENT_SERVICE_URL) echo "http://localhost" ;;
+        NEXT_PUBLIC_DOCTOR_SERVICE_URL) echo "http://localhost" ;;
+        NEXT_PUBLIC_APPOINTMENT_SERVICE_URL) echo "http://localhost" ;;
+        NEXT_PUBLIC_PAYMENT_SERVICE_URL) echo "http://localhost" ;;
+        NEXT_PUBLIC_FIREBASE_PROJECT_ID) echo "${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-${FIREBASE_PROJECT_ID:-}}" ;;
+        NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN) echo "${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}" ;;
+        GOOGLE_CLIENT_ID) echo "${GOOGLE_CLIENT_ID:-}" ;;
+        LIVEKIT_URL) echo "${LIVEKIT_URL:-http://telemedicine-service:8086}" ;;
+        FIREBASE_PROJECT_ID) echo "${FIREBASE_PROJECT_ID:-}" ;;
+        *) echo "" ;;
+    esac
+}
+
+CONFIGMAP_ARGS=()
 for var in "${PUBLIC_VARS[@]}"; do
-    val="${!var}"
-    if [ -n "$val" ]; then
-        CONFIGMAP_DATA+="  $var: \"$val\"\n"
-    fi
+    val="$(config_default "$var")"
+    CONFIGMAP_ARGS+=("--from-literal=${var}=${val}")
 done
 
-# Create ConfigMap manifest
-cat > /tmp/configmap-generated.yaml <<EOF
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: telemedicine-config
-  namespace: $NAMESPACE
-data:
-$(echo -e "$CONFIGMAP_DATA" | sed 's/^/  /')
-EOF
-
-kubectl apply -f /tmp/configmap-generated.yaml
+# Create ConfigMap directly from literals so missing .env keys still get defaults
+kubectl create configmap telemedicine-config \
+    "${CONFIGMAP_ARGS[@]}" \
+    -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 echo -e "${GREEN}✓ ConfigMap created from .env${NC}\n"
 
 # Create Secret from .env sensitive variables
@@ -113,6 +134,7 @@ echo -e "${YELLOW}Creating Secret from .env...${NC}"
 # Extract sensitive variables for Secret
 SECRET_VARS=(
     "DATABASE_URL"
+    "FIREBASE_PROJECT_ID"
     "FIREBASE_CLIENT_EMAIL"
     "FIREBASE_PRIVATE_KEY"
     "FIREBASE_SERVICE_ACCOUNT_PATH"
@@ -137,52 +159,61 @@ SECRET_VARS=(
     "Web_client_secret"
 )
 
-# Build Secret from variables
-SECRET_DATA=""
+# Build Secret directly from literals to support multiline values and safe defaults
+secret_default() {
+    case "$1" in
+        DATABASE_URL) echo "${DATABASE_URL:-mongodb://admin:admin@mongodb-payment:27017/payment-db?authSource=admin}" ;;
+        FIREBASE_PROJECT_ID) echo "${FIREBASE_PROJECT_ID:-}" ;;
+        FIREBASE_CLIENT_EMAIL) echo "${FIREBASE_CLIENT_EMAIL:-}" ;;
+        FIREBASE_PRIVATE_KEY) echo "${FIREBASE_PRIVATE_KEY:-}" ;;
+        FIREBASE_SERVICE_ACCOUNT_PATH) echo "${FIREBASE_SERVICE_ACCOUNT_PATH:-/var/secrets/firebase/service-account.json}" ;;
+        FIREBASE_WEB_API_KEY) echo "${FIREBASE_WEB_API_KEY:-}" ;;
+        NEXT_PUBLIC_FIREBASE_API_KEY) echo "${NEXT_PUBLIC_FIREBASE_API_KEY:-}" ;;
+        GOOGLE_CLIENT_ID) echo "${GOOGLE_CLIENT_ID:-}" ;;
+        GOOGLE_CLIENT_SECRET) echo "${GOOGLE_CLIENT_SECRET:-}" ;;
+        OPENAI_API_KEY) echo "${OPENAI_API_KEY:-}" ;;
+        OPENAI_MODEL) echo "${OPENAI_MODEL:-gpt-4o-mini}" ;;
+        TWILIO_ACCOUNT_SID) echo "${TWILIO_ACCOUNT_SID:-}" ;;
+        TWILIO_AUTH_TOKEN) echo "${TWILIO_AUTH_TOKEN:-}" ;;
+        TWILIO_PHONE_NUMBER) echo "${TWILIO_PHONE_NUMBER:-}" ;;
+        SENDGRID_API_KEY) echo "${SENDGRID_API_KEY:-}" ;;
+        SENDGRID_SENDER_EMAIL) echo "${SENDGRID_SENDER_EMAIL:-}" ;;
+        LIVEKIT_API_KEY) echo "${LIVEKIT_API_KEY:-}" ;;
+        LIVEKIT_API_SECRET) echo "${LIVEKIT_API_SECRET:-}" ;;
+        STRIPE_SECRET_KEY) echo "${STRIPE_SECRET_KEY:-}" ;;
+        STRIPE_WEBHOOK_SECRET) echo "${STRIPE_WEBHOOK_SECRET:-}" ;;
+        STRIPE_PUBLIC_KEY) echo "${STRIPE_PUBLIC_KEY:-}" ;;
+        INTERNAL_SERVICE_KEY) echo "${INTERNAL_SERVICE_KEY:-}" ;;
+        Web_client_ID) echo "${Web_client_ID:-}" ;;
+        Web_client_secret) echo "${Web_client_secret:-}" ;;
+        *) echo "" ;;
+    esac
+}
+
+SECRET_ARGS=()
 for var in "${SECRET_VARS[@]}"; do
-    val="${!var}"
-    if [ -n "$val" ]; then
-        # Escape special characters for YAML
-        val_escaped=$(printf '%s\n' "$val" | sed 's/[\/&]/\\&/g' | sed 's/"/\\"/g')
-        SECRET_DATA+="  $var: \"$val_escaped\"\n"
-    else
-        SECRET_DATA+="  $var: \"<set-at-deploy-time>\"\n"
-    fi
+    val="$(secret_default "$var")"
+    SECRET_ARGS+=("--from-literal=${var}=${val}")
 done
 
-# Create Secret manifest
-cat > /tmp/secret-generated.yaml <<EOF
-apiVersion: v1
-kind: Secret
-metadata:
-  name: telemedicine-secrets
-  namespace: $NAMESPACE
-type: Opaque
-stringData:
-$(echo -e "$SECRET_DATA" | sed 's/^/  /')
-EOF
+kubectl create secret generic telemedicine-secrets \
+    "${SECRET_ARGS[@]}" \
+    -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl apply -f /tmp/secret-generated.yaml
 echo -e "${GREEN}✓ Secret created from .env${NC}\n"
 
-# Deploy all services
+# Deploy all manifests (deployments, services, statefulsets, configmaps, secrets)
 echo -e "${YELLOW}Deploying services...${NC}"
+kubectl apply -f deployments/kubernetes -n "$NAMESPACE"
 
-for manifest in deployments/kubernetes/*-deployment.yaml; do
-    if [ -f "$manifest" ]; then
-        service_name=$(basename "$manifest" -deployment.yaml)
-        echo -e "${YELLOW}  - Deploying ${service_name}...${NC}"
-        kubectl apply -f "$manifest" -n "$NAMESPACE"
-    fi
-done
+echo -e "${YELLOW}Re-applying generated ConfigMap/Secret from .env to override static placeholders...${NC}"
+kubectl create configmap telemedicine-config \
+    "${CONFIGMAP_ARGS[@]}" \
+    -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
-for manifest in deployments/kubernetes/*-service.yaml; do
-    if [ -f "$manifest" ]; then
-        service_name=$(basename "$manifest" -service.yaml)
-        echo -e "${YELLOW}  - Deploying service ${service_name}...${NC}"
-        kubectl apply -f "$manifest" -n "$NAMESPACE"
-    fi
-done
+kubectl create secret generic telemedicine-secrets \
+    "${SECRET_ARGS[@]}" \
+    -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
 echo -e "${GREEN}✓ All services deployed${NC}\n"
 

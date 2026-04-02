@@ -26,10 +26,7 @@ spec:
             - containerPort: 5001
           env:
             - name: PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: telemedicine-config
-                  key: AUTH_PORT
+              value: "5001"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -76,7 +73,7 @@ spec:
           
           livenessProbe:
             httpGet:
-              path: /api/auth/health
+              path: /health
               port: 5001
             initialDelaySeconds: 30
             periodSeconds: 10
@@ -85,23 +82,13 @@ spec:
           
           readinessProbe:
             httpGet:
-              path: /api/auth/health
+              path: /health
               port: 5001
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 2
           
-          volumeMounts:
-            - name: firebase-secret
-              mountPath: /var/secrets/firebase
-              readOnly: true
-      
-      volumes:
-        - name: firebase-secret
-          secret:
-            secretName: firebase-service-account
-
 ---
 apiVersion: v1
 kind: Service
