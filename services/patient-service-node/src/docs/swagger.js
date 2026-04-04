@@ -59,6 +59,18 @@ const options = {
                         },
                     },
                 },
+                CreateMedicalHistoryRequest: {
+                    type: 'object',
+                    required: ['authUserId', 'diagnosis', 'treatment'],
+                    properties: {
+                        authUserId: { type: 'string' },
+                        diagnosis: { type: 'string' },
+                        treatment: { type: 'string' },
+                        doctorId: { type: 'string' },
+                        consultationDate: { type: 'string', format: 'date-time' },
+                        notes: { type: 'string' },
+                    },
+                },
             },
         },
         paths: {
@@ -212,6 +224,28 @@ const options = {
                     responses: {
                         200: { description: 'History returned' },
                         401: { description: 'Unauthorized' },
+                    },
+                },
+            },
+            '/api/patients/history': {
+                post: {
+                    tags: ['Medical History'],
+                    summary: 'Create a medical history entry (doctor/admin)',
+                    security: [{ bearerAuth: [] }],
+                    requestBody: {
+                        required: true,
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/CreateMedicalHistoryRequest' },
+                            },
+                        },
+                    },
+                    responses: {
+                        201: { description: 'History entry created' },
+                        400: { description: 'Validation failed' },
+                        401: { description: 'Unauthorized' },
+                        403: { description: 'Forbidden' },
+                        404: { description: 'Patient not found' },
                     },
                 },
             },

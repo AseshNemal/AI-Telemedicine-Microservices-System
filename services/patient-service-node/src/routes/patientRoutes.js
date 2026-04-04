@@ -24,6 +24,7 @@ router.get('/me/reports', authenticateFirebaseToken, requireRole(['PATIENT']), r
 router.delete('/me/reports/:reportId', authenticateFirebaseToken, requireRole(['PATIENT']), reportController.deleteMyReport);
 router.get('/me/prescriptions', authenticateFirebaseToken, requireRole(['PATIENT']), recordsController.listMyPrescriptions);
 router.get('/me/history', authenticateFirebaseToken, requireRole(['PATIENT']), recordsController.listMyMedicalHistory);
+router.post('/history', authenticateFirebaseToken, requireRole(['DOCTOR', 'ADMIN']), recordsController.createMedicalHistoryEntry);
 
 router.get('/internal/:authUserId', protectInternalRoute, profileController.getByAuthUserId);
 
