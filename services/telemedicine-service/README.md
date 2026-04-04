@@ -84,3 +84,6 @@ Request body:
   "metadata": "{\"appointmentId\":\"apt-123\"}"
 }
 ```
+
+If `emptyTimeout` is omitted or set to `0`, the service applies a default of `300` seconds (5 minutes).
+This means a room with no participants will be automatically cleaned up by LiveKit after 5 minutes.
