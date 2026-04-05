@@ -18,9 +18,10 @@ Install the following before running:
 ## Quick Setup
 
 1. Ensure `.env` exists at project root (same level as `README.md`).
-2. Configure MongoDB + Firebase env values using `.env.example`.
-3. Place Firebase service account JSON at `secrets/firebase-service-account.json`.
-4. (Optional) Use `.env.example` as a reference template.
+2. Configure MongoDB + Firebase env values using `.env.example` or `deployments/kubernetes/secret.example.yaml` as templates.
+3. Do NOT commit real credentials into the repository. Keep secret files locally and under `.gitignore`.
+4. Place Firebase service account JSON and any other provider private files in a local `secrets/` folder that is gitignored (see `.gitignore`).
+5. (Optional) Use `.env.example` as a reference template.
 
 ## Architecture Overview
 
@@ -162,6 +163,41 @@ Required:
 Node service runtime mapping in Docker/K8s:
 - Auth service uses `MONGO_URI`, `PATIENT_SERVICE_URL`, `INTERNAL_SERVICE_KEY`, Firebase vars
 - Patient service uses `MONGO_URI`, `INTERNAL_SERVICE_KEY`, Firebase vars
+
+## Secrets & secure storage
+
+- This repository no longer contains real secret material. A template is provided at `deployments/kubernetes/secret.example.yaml`.
+- Do NOT add files with real credentials to the repo. Add them to `.gitignore` (this project already ignores `deployments/kubernetes/secret.yaml`).
+
+Recommended workflows:
+
+- Create Kubernetes secrets from a local file (keeps values out of git):
+
+```bash
+# from project root (example: create secret from a local env file)
+kubectl create secret generic telemedicine-secrets --from-env-file=./deployments/kubernetes/secret.example.env
+
+# or create from a local YAML file (keep it outside the repo if it contains real values)
+kubectl create secret generic telemedicine-secrets --from-file=secret.yaml=./path/to/local/secret.yaml
+```
+
+- If you accidentally committed secrets, rotate them immediately (API keys, private keys, tokens). To remove files from git history, use `git-filter-repo` or the BFG Repo-Cleaner and then force-push. Example (run locally and back up first):
+
+```bash
+# backup mirror
+git clone --mirror git@github.com:YOUR/REPO.git repo-backup.git
+
+# remove path from history (requires git-filter-repo)
+git filter-repo --path deployments/kubernetes/secret.yaml --invert-paths
+
+# force push cleaned history (coordinate with collaborators)
+git push --force --all
+git push --force --tags
+```
+
+- Use a secret manager for production (Vault, AWS/Google/Azure secret stores) or sealed-secrets for Kubernetes.
+
+If you'd like, I can prepare a small helper script that creates the Kubernetes secret from a local env file without adding secrets to the repo.
 
 ## Local Run (Docker Compose) - macOS / Linux (zsh/bash)
 
