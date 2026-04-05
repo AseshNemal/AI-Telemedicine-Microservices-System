@@ -152,9 +152,47 @@ health_checks() {
 }
 
 start_port_forward() {
-  log_info "Starting port-forward: localhost:${PORT_FORWARD_PORT} -> svc/api-gateway-nginx:80"
-  log_info "Press Ctrl+C to stop port-forward"
-  kubectl port-forward -n "$NAMESPACE" svc/api-gateway-nginx "${PORT_FORWARD_PORT}:80"
+  log_info "Starting comprehensive port-forwarding for all services..."
+  log_info "Press Ctrl+C to stop all port-forwards."
+  
+  # Forward API Gateway
+  kubectl port-forward -n "$NAMESPACE" svc/api-gateway-nginx "${PORT_FORWARD_PORT}:80" > /dev/null 2>&1 &
+  GATEWAY_PID=$!
+
+  # Forward Web App Service
+  kubectl port-forward -n "$NAMESPACE" svc/web-app 3000:3000 > /dev/null 2>&1 &
+  WEB_PID=$!
+
+  # Forward Individual Backend Services (For direct debugging)
+  kubectl port-forward -n "$NAMESPACE" svc/auth-service 8081:8081 > /dev/null 2>&1 &
+  AUTH_PID=$!
+  kubectl port-forward -n "$NAMESPACE" svc/patient-service 5002:5002 > /dev/null 2>&1 &
+  PATIENT_PID=$!
+  kubectl port-forward -n "$NAMESPACE" svc/doctor-service 8082:8082 > /dev/null 2>&1 &
+  DOCTOR_PID=$!
+  kubectl port-forward -n "$NAMESPACE" svc/appointment-service 8083:8083 > /dev/null 2>&1 &
+  APPT_PID=$!
+  kubectl port-forward -n "$NAMESPACE" svc/notification-service 8084:8084 > /dev/null 2>&1 &
+  NOTIFY_PID=$!
+  kubectl port-forward -n "$NAMESPACE" svc/payment-service 8085:8085 > /dev/null 2>&1 &
+  PAY_PID=$!
+  kubectl port-forward -n "$NAMESPACE" svc/symptom-service 8091:8091 > /dev/null 2>&1 &
+  SYMPTOM_PID=$!
+
+  echo -e "\n✅ Success! Your apps and individual services are now exposed locally."
+  echo "   - Web Frontend:  http://localhost:3000"
+  echo "   - API Gateway:   http://localhost:${PORT_FORWARD_PORT}"
+  echo "   - Auth:          http://localhost:8081"
+  echo "   - Patient:       http://localhost:5002"
+  echo "   - Doctor:        http://localhost:8082"
+  echo "   - Appointment:   http://localhost:8083"
+  echo "   - Notification:  http://localhost:8084"
+  echo "   - Payment:       http://localhost:8085"
+  echo "   - Symptom:       http://localhost:8091"
+  echo ""
+
+  trap "log_info '\nStopping all port forwards...'; kill \$GATEWAY_PID \$WEB_PID \$AUTH_PID \$PATIENT_PID \$DOCTOR_PID \$APPT_PID \$NOTIFY_PID \$PAY_PID \$SYMPTOM_PID 2>/dev/null; exit" INT
+  wait
 }
 
 main() {

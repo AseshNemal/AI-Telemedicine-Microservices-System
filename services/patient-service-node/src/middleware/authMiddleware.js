@@ -37,7 +37,7 @@ const resolveRoleFromUser = (user) => {
         return null;
     }
 
-    const role = user.role || (user.claims && user.claims.role) || null;
+    const role = user.role || (user.claims && user.claims.role) || 'PATIENT';
     return role ? String(role).toUpperCase() : null;
 };
 

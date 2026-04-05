@@ -21,3 +21,7 @@ web-app/.next/
 .githooks/*.log
 
 .gocache/
+
+secret.yaml
+deployments/kubernetes/secret.yaml
+deployments/kubernetes/secret.yaml

@@ -349,18 +349,19 @@ chmod +x k8s-up.sh
 ./k8s-up.sh
 ```
 
-3. Optional: expose API Gateway on localhost:
+3. Expose services to your local machine (Nginx Gateway + All backend services individually):
 
 ```bash
-kubectl port-forward -n default svc/api-gateway-nginx 8080:80
+./k8s-up.sh --port-forward
+# OR you can run it standalone anytime via:
+# ./start-port-forwarding.sh
 ```
 
-4. Verify:
+4. Verify it works in your browser:
 
-```bash
-kubectl get pods -n default
-curl http://localhost:8080/health
-```
+- Web Frontend: `http://localhost:3000`
+- API Gateway (Handles all routing!): `http://localhost:8080/health`
+- Individual Doctor Service (Bypassing Gateway): `http://localhost:8082/doctors`
 
 Useful script flags:
 
@@ -380,6 +381,8 @@ Troubleshooting:
 
 - If `./k8s-up.sh` says `Cannot connect to Kubernetes API server`, enable Kubernetes in Docker Desktop and retry.
 - If a service image fails to build, rebuild that image locally first, then rerun `./k8s-up.sh --skip-build`.
+- **Apple Silicon (M1/M2/M3) Issue:** If standard public images like nginx or mongodb fail to pull in a local Linux cluster (e.g. `kind` running on AMD64) with `unexpected EOF`, you must explicitly pull the linux/amd64 versions and load them manually. Example: `docker pull --platform linux/amd64 nginx:1.27-alpine`, then load them `kind load docker-image nginx:1.27-alpine --name <cluster-name>`.
+- **Missing Secrets:** Make sure to create all necessary required secrets before starting apps. Example for Mongo payment credential generation: `kubectl create secret generic mongodb-payment-credentials --from-literal=username=<username> --from-literal=password=<password> -n default`
 
 ## Run a single service (developer mode)
 
