@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -50,19 +52,23 @@ type paymentResponse struct {
 	Currency    string  `json:"currency"`
 }
 
-// defaultConsultationFeeCents is the fallback fee when the doctor has not configured one.
-const defaultConsultationFeeCents = 5000 // $50.00
+// platformFeeCents is the fixed platform (AI Telemedicine) fee: $20.00
+const platformFeeCents = 2000
+
+// internalServiceKey returns the service-to-service auth key for calling the payment service.
+func internalServiceKey() string {
+	return strings.TrimSpace(os.Getenv("INTERNAL_SERVICE_KEY"))
+}
 
 // InitiatePayment calls POST /payments on the payment-service to create a
 // Stripe checkout session. doctorFeeCents is the doctor's configured fee in
-// cents; when 0, the default $50 is used. It returns the checkout URL the
-// client must visit to complete payment.
+// cents. Final amount = doctorFeeCents + $20 platform fee (C-2).
 func (s *PaymentService) InitiatePayment(appointmentID, patientID, doctorID string, doctorFeeCents int) (*PaymentResult, error) {
-	feeCents := doctorFeeCents
-	if feeCents <= 0 {
-		feeCents = defaultConsultationFeeCents
+	if doctorFeeCents < 0 {
+		doctorFeeCents = 0
 	}
-	amount := float64(feeCents) / 100.0
+	totalCents := doctorFeeCents + platformFeeCents
+	amount := float64(totalCents) / 100.0
 
 	payload, err := json.Marshal(paymentRequest{
 		AppointmentID: appointmentID,
@@ -76,11 +82,16 @@ func (s *PaymentService) InitiatePayment(appointmentID, patientID, doctorID stri
 		return nil, fmt.Errorf("marshal payment request: %w", err)
 	}
 
-	resp, err := s.httpClient.Post(
-		s.baseURL+"/payments",
-		"application/json",
-		bytes.NewBuffer(payload),
-	)
+	req, err := http.NewRequest(http.MethodPost, s.baseURL+"/payments", bytes.NewBuffer(payload))
+	if err != nil {
+		return nil, fmt.Errorf("build payment request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if key := internalServiceKey(); key != "" {
+		req.Header.Set("X-Internal-Service-Key", key)
+	}
+
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("payment-service unreachable: %w", err)
 	}
@@ -114,7 +125,15 @@ type PaymentVerification struct {
 // VerifyPayment calls GET /payments/:transactionID on the payment-service to
 // confirm whether a Stripe checkout session has been completed.
 func (s *PaymentService) VerifyPayment(transactionID string) (*PaymentVerification, error) {
-	resp, err := s.httpClient.Get(s.baseURL + "/payments/" + url.PathEscape(transactionID))
+	req, err := http.NewRequest(http.MethodGet, s.baseURL+"/payments/"+url.PathEscape(transactionID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build verify request: %w", err)
+	}
+	if key := internalServiceKey(); key != "" {
+		req.Header.Set("X-Internal-Service-Key", key)
+	}
+
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("payment-service unreachable: %w", err)
 	}
@@ -136,7 +155,7 @@ func (s *PaymentService) VerifyPayment(transactionID string) (*PaymentVerificati
 }
 
 // RefundPayment calls POST /payments/:transactionID/refund on the payment-service
-// to initiate a refund for a completed payment.
+// to initiate a Stripe refund for a completed payment (C-1).
 func (s *PaymentService) RefundPayment(transactionID string) error {
 	req, err := http.NewRequest(http.MethodPost,
 		s.baseURL+"/payments/"+url.PathEscape(transactionID)+"/refund",
@@ -144,6 +163,9 @@ func (s *PaymentService) RefundPayment(transactionID string) error {
 	)
 	if err != nil {
 		return fmt.Errorf("build refund request: %w", err)
+	}
+	if key := internalServiceKey(); key != "" {
+		req.Header.Set("X-Internal-Service-Key", key)
 	}
 
 	resp, err := s.httpClient.Do(req)

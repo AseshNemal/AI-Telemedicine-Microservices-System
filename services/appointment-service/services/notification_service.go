@@ -61,12 +61,14 @@ func (s *NotificationService) send(to, subject, message string) {
 }
 
 // SendBookingConfirmation notifies the patient that their appointment request
-// was received and a payment checkout link is ready for them to complete.
-func (s *NotificationService) SendBookingConfirmation(appointmentID, patientEmail, patientName, doctorDisplay, specialty, date, timeSlot, checkoutURL string) {
+// was received and payment is required. m-7: The Stripe checkout URL is no
+// longer embedded in the email body to prevent leaking a sensitive payment
+// link. The patient should complete payment through the platform UI.
+func (s *NotificationService) SendBookingConfirmation(appointmentID, patientEmail, patientName, doctorDisplay, specialty, date, timeSlot, _ string) {
 	subject := "Complete Your Payment — Appointment Request Received"
 	message := fmt.Sprintf(
-		"Dear %s,\n\nYour appointment request (ID: %s) for %s with Dr. %s on %s at %s has been received.\n\nYour appointment is NOT yet confirmed. Please complete payment to proceed:\n%s",
-		patientName, appointmentID, specialty, doctorDisplay, date, timeSlot, checkoutURL,
+		"Dear %s,\n\nYour appointment request (ID: %s) for %s with Dr. %s on %s at %s has been received.\n\nYour appointment is NOT yet confirmed. Please log in to the platform to complete payment and proceed.",
+		patientName, appointmentID, specialty, doctorDisplay, date, timeSlot,
 	)
 	s.send(patientEmail, subject, message)
 }
@@ -87,7 +89,7 @@ func (s *NotificationService) SendPaymentConfirmation(appointmentID, patientEmai
 func (s *NotificationService) SendStatusUpdate(appointmentID, patientEmail, doctorDisplay, date, timeSlot, newStatus, reason string) {
 	messages := map[string]string{
 		"BOOKED":    "Great news! Your appointment has been accepted by the doctor.",
-		"REJECTED":  "Unfortunately, your appointment request was declined by the doctor. You may book a new appointment.",
+		"REJECTED":  "Unfortunately, your appointment request was declined by the doctor. If you had already paid, a refund will be processed automatically. You may reschedule with the same or a different doctor at any time.",
 		"CANCELLED": "Your appointment has been cancelled.",
 		"COMPLETED": "Your consultation has been completed. Thank you for using our service.",
 	}
