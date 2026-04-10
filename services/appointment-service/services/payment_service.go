@@ -50,19 +50,25 @@ type paymentResponse struct {
 	Currency    string  `json:"currency"`
 }
 
-// consultationFee is the fixed fee charged per appointment in USD.
-const consultationFee = 50.0
+// defaultConsultationFeeCents is the fallback fee when the doctor has not configured one.
+const defaultConsultationFeeCents = 5000 // $50.00
 
 // InitiatePayment calls POST /payments on the payment-service to create a
-// Stripe checkout session. It returns the checkout URL the client must visit
-// to complete payment. The appointment should remain in PENDING_PAYMENT status
-// until payment is confirmed via ConfirmPayment.
-func (s *PaymentService) InitiatePayment(appointmentID, patientID, doctorID string) (*PaymentResult, error) {
+// Stripe checkout session. doctorFeeCents is the doctor's configured fee in
+// cents; when 0, the default $50 is used. It returns the checkout URL the
+// client must visit to complete payment.
+func (s *PaymentService) InitiatePayment(appointmentID, patientID, doctorID string, doctorFeeCents int) (*PaymentResult, error) {
+	feeCents := doctorFeeCents
+	if feeCents <= 0 {
+		feeCents = defaultConsultationFeeCents
+	}
+	amount := float64(feeCents) / 100.0
+
 	payload, err := json.Marshal(paymentRequest{
 		AppointmentID: appointmentID,
 		PatientID:     patientID,
 		DoctorID:      doctorID,
-		Amount:        consultationFee,
+		Amount:        amount,
 		Currency:      "usd",
 		PaymentMethod: "CARD",
 	})
@@ -127,4 +133,28 @@ func (s *PaymentService) VerifyPayment(transactionID string) (*PaymentVerificati
 		return nil, fmt.Errorf("payment-service bad response body: %w", err)
 	}
 	return &v, nil
+}
+
+// RefundPayment calls POST /payments/:transactionID/refund on the payment-service
+// to initiate a refund for a completed payment.
+func (s *PaymentService) RefundPayment(transactionID string) error {
+	req, err := http.NewRequest(http.MethodPost,
+		s.baseURL+"/payments/"+url.PathEscape(transactionID)+"/refund",
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("build refund request: %w", err)
+	}
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("payment-service unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("payment-service refund returned %d: %s", resp.StatusCode, string(body))
+	}
+	return nil
 }

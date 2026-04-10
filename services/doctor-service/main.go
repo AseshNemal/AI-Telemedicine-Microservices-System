@@ -6,6 +6,7 @@ import (
 	"doctor-service/routes"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,9 @@ func main() {
 	_ = godotenv.Load("../../.env")
 
 	db := database.Connect()
+	db.EnsureIndexes()
+
+	// 2. Wire handlers.
 	h := handlers.NewHandler(db)
 
 	router := gin.Default()
@@ -47,8 +51,8 @@ func main() {
 		port = "8082"
 	}
 
-	log.Printf("doctor-service listening on :%s", port)
+	log.Printf("[doctor-service] listening on :%s", port)
 	if err := router.Run(":" + port); err != nil {
-		log.Fatalf("failed to start doctor-service: %v", err)
+		log.Fatalf("[doctor-service] failed to start: %v", err)
 	}
 }

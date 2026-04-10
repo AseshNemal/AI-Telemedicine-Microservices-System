@@ -145,7 +145,7 @@ func (h *Handler) fetchAppointment(c *gin.Context, id string) (models.Appointmen
 		return models.Appointment{}, false
 	}
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch appointment", "details": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch appointment"})
 		return models.Appointment{}, false
 	}
 	return appt, true
@@ -161,7 +161,7 @@ func (h *Handler) SearchDoctors(c *gin.Context) {
 	doctors, err := h.doctorSvc.SearchDoctors(specialty)
 	if err != nil {
 		log.Printf("[appointment-service] doctor search failed: %v", err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "could not reach doctor service", "details": err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "could not reach doctor service"})
 		return
 	}
 
@@ -176,10 +176,10 @@ func (h *Handler) GetDoctorByID(c *gin.Context) {
 	if err != nil {
 		log.Printf("[appointment-service] get doctor failed: %v", err)
 		if errors.Is(err, services.ErrDoctorNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			c.JSON(http.StatusNotFound, gin.H{"error": "doctor not found"})
 			return
 		}
-		c.JSON(http.StatusBadGateway, gin.H{"error": "could not reach doctor service", "details": err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "could not reach doctor service"})
 		return
 	}
 
@@ -194,8 +194,8 @@ func (h *Handler) GetDoctorByID(c *gin.Context) {
 //  1. Extract patientId from the JWT (never trust request body for identity).
 //  2. Validate the request body (all fields required).
 //  3. Validate the appointment is in the future (≥ 15 min, ≤ 5 months).
-//  4. Check doctor availability via the doctor-service (graceful: if service is
-//     unavailable, fall back to DB-only uniqueness guard).
+//  4. Check doctor availability via the doctor-service (mandatory; returns 502
+//     if the doctor-service is unavailable).
 //  5. Initiate payment via the payment-service (Stripe checkout session).
 //  6. Persist with status=PENDING_PAYMENT, paymentStatus=PENDING.
 //  7. Send a booking-received notification (fire-and-forget goroutine).
@@ -273,28 +273,31 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 		return
 	}
 
-	// Step 4 – check doctor availability (graceful: doctor-service may not be deployed yet).
+	// Step 4 – check doctor availability (mandatory).
 	available, err := h.doctorSvc.CheckAvailability(req.DoctorID, req.Date, req.Time)
 	if err != nil {
-		// Doctor-service is not yet available in all environments.
-		// Log a warning and fall through; the DB unique index is the safety net.
-		log.Printf("[appointment-service] doctor availability check unavailable: %v — relying on DB uniqueness guard", err)
-	} else if !available {
+		log.Printf("[appointment-service] doctor availability check failed: %v", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "could not verify doctor availability; please try again"})
+		return
+	}
+	if !available {
 		c.JSON(http.StatusConflict, gin.H{"error": "doctor is not available for the requested slot"})
 		return
 	}
 
-	// Step 4b – fetch doctor name and email for human-readable notifications (graceful fallback to ID).
+	// Step 4b – fetch doctor name and fee for payment and notifications.
+	var doctorFeeCents int
 	if doctorInfo, nameErr := h.doctorSvc.GetDoctorByID(req.DoctorID); nameErr != nil {
-		log.Printf("[appointment-service] could not fetch doctor name for %s: %v — using ID as display name", req.DoctorID, nameErr)
-		req.DoctorName = req.DoctorID
+		log.Printf("[appointment-service] could not fetch doctor info for %s: %v", req.DoctorID, nameErr)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "could not fetch doctor information; please try again"})
+		return
 	} else {
 		if doctorInfo.Name != "" {
 			req.DoctorName = doctorInfo.Name
 		} else {
 			req.DoctorName = req.DoctorID
 		}
-		req.DoctorEmail = doctorInfo.Email
+		doctorFeeCents = doctorInfo.ConsultationFeeCents
 	}
 
 	// Generate the appointment ID.
@@ -359,13 +362,13 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 			return
 		}
 		log.Printf("[appointment-service] mongo insert failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save appointment", "details": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to save appointment"})
 		return
 	}
 
 	// Step 6 – initiate Stripe payment session. If this fails, delete the
 	// persisted appointment as a compensating action to avoid stranded records.
-	paymentResult, err := h.paymentSvc.InitiatePayment(appointmentID, patientID, req.DoctorID)
+	paymentResult, err := h.paymentSvc.InitiatePayment(appointmentID, patientID, req.DoctorID, doctorFeeCents)
 	if err != nil {
 		log.Printf("[appointment-service] payment initiation failed for %s: %v — rolling back", appointmentID, err)
 		rollbackCtx, rollbackCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -373,7 +376,7 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 		if _, delErr := h.db.DB.Collection("appointments").DeleteOne(rollbackCtx, bson.M{"id": appointmentID}); delErr != nil {
 			log.Printf("[appointment-service] rollback delete failed for %s: %v", appointmentID, delErr)
 		}
-		c.JSON(http.StatusPaymentRequired, gin.H{"error": "payment initiation failed", "details": err.Error()})
+		c.JSON(http.StatusPaymentRequired, gin.H{"error": "payment initiation failed"})
 		return
 	}
 
@@ -477,7 +480,7 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 	verification, err := h.paymentSvc.VerifyPayment(appt.TransactionID)
 	if err != nil {
 		log.Printf("[appointment-service] payment verification failed for %s (txn=%s): %v", id, appt.TransactionID, err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "payment verification failed", "details": err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "payment verification failed"})
 		return
 	}
 
@@ -503,7 +506,7 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 		}},
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to confirm appointment", "details": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to confirm appointment"})
 		return
 	}
 	if res.MatchedCount == 0 {
@@ -753,13 +756,13 @@ func (h *Handler) GetMyAppointments(c *gin.Context) {
 
 	cursor, err := h.db.DB.Collection("appointments").Find(ctx, filter, sortOpts)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query appointments", "details": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query appointments"})
 		return
 	}
 
 	var results []models.Appointment
 	if err = cursor.All(ctx, &results); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read appointments", "details": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read appointments"})
 		return
 	}
 
@@ -827,6 +830,10 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "a reason is required when rejecting an appointment"})
 			return
 		}
+		if newStatus == models.StatusCompleted && !appt.IsStarted() {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot mark an appointment as COMPLETED before its scheduled time"})
+			return
+		}
 		// Note: state machine enforces that only CONFIRMED → BOOKED/REJECTED is valid.
 		// A PENDING_PAYMENT appointment cannot be accepted until the patient pays.
 
@@ -891,13 +898,21 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 		bson.M{"$set": setFields},
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update appointment", "details": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update appointment"})
 		return
 	}
 	if res.MatchedCount == 0 {
 		// Another goroutine changed the status between our read and write.
 		c.JSON(http.StatusConflict, gin.H{"error": "appointment status was modified concurrently; please retry"})
 		return
+	}
+
+	// Refund on cancellation or rejection of a paid appointment.
+	if (newStatus == models.StatusCancelled || newStatus == models.StatusRejected) &&
+		appt.PaymentStatus == models.PaymentCompleted && appt.TransactionID != "" {
+		if refundErr := h.paymentSvc.RefundPayment(appt.TransactionID); refundErr != nil {
+			log.Printf("[appointment-service] refund failed for %s (txn=%s): %v", id, appt.TransactionID, refundErr)
+		}
 	}
 
 	// ── Create LiveKit room AFTER successful DB write (issue B1) ────────────
@@ -1011,11 +1026,14 @@ func (h *Handler) RescheduleAppointment(c *gin.Context) {
 		return
 	}
 
-	// Re-validate availability on the new slot (graceful: proceed if service down).
+	// Re-validate availability on the new slot (mandatory).
 	available, err := h.doctorSvc.CheckAvailability(appt.DoctorID, req.Date, req.Time)
 	if err != nil {
-		log.Printf("[appointment-service] doctor availability check unavailable during reschedule: %v — relying on DB uniqueness guard", err)
-	} else if !available {
+		log.Printf("[appointment-service] doctor availability check failed during reschedule: %v", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "could not verify doctor availability; please try again"})
+		return
+	}
+	if !available {
 		c.JSON(http.StatusConflict, gin.H{"error": "doctor is not available for the requested new slot"})
 		return
 	}
@@ -1046,7 +1064,7 @@ func (h *Handler) RescheduleAppointment(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": "the new slot is already taken by another booking"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reschedule appointment", "details": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to reschedule appointment"})
 		return
 	}
 	if res.MatchedCount == 0 {
@@ -1119,12 +1137,19 @@ func (h *Handler) CancelAppointment(c *gin.Context) {
 		}},
 	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to cancel appointment", "details": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to cancel appointment"})
 		return
 	}
 	if res.MatchedCount == 0 {
 		c.JSON(http.StatusConflict, gin.H{"error": "appointment was modified concurrently; please retry"})
 		return
+	}
+
+	// Refund if payment was completed.
+	if appt.PaymentStatus == models.PaymentCompleted && appt.TransactionID != "" {
+		if refundErr := h.paymentSvc.RefundPayment(appt.TransactionID); refundErr != nil {
+			log.Printf("[appointment-service] refund failed for %s (txn=%s): %v", id, appt.TransactionID, refundErr)
+		}
 	}
 
 	go h.notifSvc.SendStatusUpdate(appt.ID, appt.PatientEmail, doctorDisplayName(appt), appt.Date, appt.Time, models.StatusCancelled, "")
@@ -1221,7 +1246,7 @@ func (h *Handler) GetConsultationToken(c *gin.Context) {
 	token, err := h.telemediaSvc.GetJoinToken(appt.ConsultationRoomName, uid, displayName)
 	if err != nil {
 		log.Printf("[appointment-service] failed to get join token for %s (room=%s uid=%s): %v", id, appt.ConsultationRoomName, uid, err)
-		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to issue consultation token", "details": err.Error()})
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to issue consultation token"})
 		return
 	}
 
@@ -1233,8 +1258,12 @@ func (h *Handler) GetConsultationToken(c *gin.Context) {
 	})
 }
 
-// Health returns a liveness probe for the service.
+// Health returns a readiness probe for the service.
 func (h *Handler) Health(c *gin.Context) {
+	if !dbReady(h.db) {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"service": "appointment-service", "status": "DEGRADED", "database": "disconnected"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"service": "appointment-service",
 		"status":  "OK",

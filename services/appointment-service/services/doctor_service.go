@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 )
 
@@ -30,12 +31,12 @@ func NewDoctorService(baseURL string) *DoctorService {
 
 // Doctor is a lightweight representation of a doctor returned by the doctor-service.
 type Doctor struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Email        string   `json:"email"`
-	Specialty    string   `json:"specialty"`
-	Hospital     string   `json:"hospital"`
-	Availability []string `json:"availability"`
+	ID                   string `json:"id"`
+	Name                 string `json:"name"`
+	Specialty            string `json:"specialty"`
+	ExperienceYears      int    `json:"experience_years"`
+	ConsultationFeeCents int    `json:"consultation_fee_cents"`
+	VerificationStatus   string `json:"verification_status"`
 }
 
 type availabilityRequest struct {
@@ -61,11 +62,19 @@ func (s *DoctorService) CheckAvailability(doctorID, date, timeSlot string) (bool
 		return false, fmt.Errorf("marshal availability request: %w", err)
 	}
 
-	resp, err := s.httpClient.Post(
+	req, err := http.NewRequest(http.MethodPost,
 		s.baseURL+"/check-availability",
-		"application/json",
 		bytes.NewBuffer(payload),
 	)
+	if err != nil {
+		return false, fmt.Errorf("build availability request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if key := os.Getenv("INTERNAL_SERVICE_KEY"); key != "" {
+		req.Header.Set("X-Internal-Key", key)
+	}
+
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return false, fmt.Errorf("doctor-service unreachable: %w", err)
 	}
@@ -113,7 +122,7 @@ func (s *DoctorService) SearchDoctors(specialty string) ([]Doctor, error) {
 
 // GetDoctorByID calls GET /doctor/:id on the doctor service.
 func (s *DoctorService) GetDoctorByID(doctorID string) (*Doctor, error) {
-	resp, err := s.httpClient.Get(s.baseURL + "/doctor/" + url.PathEscape(doctorID))
+	resp, err := s.httpClient.Get(s.baseURL + "/doctors/" + url.PathEscape(doctorID))
 	if err != nil {
 		return nil, fmt.Errorf("doctor-service unreachable: %w", err)
 	}
