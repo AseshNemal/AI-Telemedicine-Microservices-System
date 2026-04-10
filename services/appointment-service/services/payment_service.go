@@ -86,10 +86,12 @@ func (s *PaymentService) InitiatePayment(appointmentID, patientID, doctorID stri
 	if err != nil {
 		return nil, fmt.Errorf("build payment request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	if key := internalServiceKey(); key != "" {
-		req.Header.Set("X-Internal-Service-Key", key)
+	key := internalServiceKey()
+	if key == "" {
+		return nil, fmt.Errorf("payment-service configuration error: INTERNAL_SERVICE_KEY is empty")
 	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Internal-Service-Key", key)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -129,9 +131,11 @@ func (s *PaymentService) VerifyPayment(transactionID string) (*PaymentVerificati
 	if err != nil {
 		return nil, fmt.Errorf("build verify request: %w", err)
 	}
-	if key := internalServiceKey(); key != "" {
-		req.Header.Set("X-Internal-Service-Key", key)
+	vKey := internalServiceKey()
+	if vKey == "" {
+		return nil, fmt.Errorf("payment-service configuration error: INTERNAL_SERVICE_KEY is empty")
 	}
+	req.Header.Set("X-Internal-Service-Key", vKey)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -164,9 +168,11 @@ func (s *PaymentService) RefundPayment(transactionID string) error {
 	if err != nil {
 		return fmt.Errorf("build refund request: %w", err)
 	}
-	if key := internalServiceKey(); key != "" {
-		req.Header.Set("X-Internal-Service-Key", key)
+	rKey := internalServiceKey()
+	if rKey == "" {
+		return fmt.Errorf("payment-service configuration error: INTERNAL_SERVICE_KEY is empty")
 	}
+	req.Header.Set("X-Internal-Service-Key", rKey)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {

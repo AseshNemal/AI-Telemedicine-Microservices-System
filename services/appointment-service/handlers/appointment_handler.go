@@ -350,17 +350,20 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 	}
 
 	// Atomic insert with pending-count guard inside a MongoDB session (M-1 fix).
+	txCtx, txCancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer txCancel()
+
 	session, sessionErr := h.db.MongoClient.StartSession()
 	if sessionErr != nil {
 		log.Printf("[appointment-service] failed to start mongo session: %v", sessionErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
 		return
 	}
-	defer session.EndSession(context.Background())
+	defer session.EndSession(txCtx)
 
 	var insertErr error
 	var pendingLimitHit bool
-	_, txErr := session.WithTransaction(context.Background(), func(sCtx mongo.SessionContext) (interface{}, error) {
+	_, txErr := session.WithTransaction(txCtx, func(sCtx mongo.SessionContext) (interface{}, error) {
 		pendingLimitHit = false
 		pendingCount, countErr := h.db.DB.Collection("appointments").CountDocuments(sCtx, bson.M{
 			"patientId": patientID,
@@ -857,7 +860,7 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 		}
 
 		// C-3/M-6: Verify doctor is VERIFIED before allowing any status change.
-		doctorInfo, doctorErr := h.doctorSvc.GetDoctorByID(uid)
+		doctorInfo, doctorErr := h.doctorSvc.GetDoctorByID(appt.DoctorID)
 		if doctorErr != nil {
 			log.Printf("[appointment-service] doctor verification check failed for %s: %v", uid, doctorErr)
 			c.JSON(http.StatusBadGateway, gin.H{"error": "could not verify doctor status"})
