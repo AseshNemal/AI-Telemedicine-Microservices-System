@@ -421,10 +421,13 @@ export async function updateMyPatientProfile(
   return res.json();
 }
 
-export async function createPayment(payload: PaymentCreateRequest): Promise<PaymentCreateResponse> {
+export async function createPayment(payload: PaymentCreateRequest, idToken: string): Promise<PaymentCreateResponse> {
   const res = await fetch(`${paymentBase}/payments`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
     body: JSON.stringify(payload),
   });
 
@@ -447,13 +450,25 @@ export async function createDoctorAccount(payload: DoctorAccountCreateRequest) {
 
   const doctorId = authResult?.data?.uid || authResult?.uid || "";
 
-  // Step 2: Sign in as the new doctor to obtain a Firebase ID token.
-  // POST /doctors requires the DOCTOR role, so we need the doctor's own token.
-  const { signInWithEmailAndPassword } = await import("firebase/auth");
+  // Step 2: Sign in as the new doctor using a temporary secondary Firebase app
+  // so the current client auth session is not replaced.
+  const { initializeApp, deleteApp } = await import("firebase/app");
+  const { getAuth, signInWithEmailAndPassword } = await import("firebase/auth");
   const { getFirebaseAuth } = await import("@/app/lib/firebaseClient");
-  const auth = getFirebaseAuth();
-  const credential = await signInWithEmailAndPassword(auth, payload.email, payload.password);
-  const doctorToken = await credential.user.getIdToken();
+  const primaryAuth = getFirebaseAuth();
+  const tempAppName = `doctor-account-${doctorId || Date.now()}`;
+  const tempApp = initializeApp(primaryAuth.app.options, tempAppName);
+  const tempAuth = getAuth(tempApp);
+
+  let doctorToken = "";
+
+  try {
+    const credential = await signInWithEmailAndPassword(tempAuth, payload.email, payload.password);
+    doctorToken = await credential.user.getIdToken();
+  } finally {
+    await tempAuth.signOut().catch(() => undefined);
+    await deleteApp(tempApp).catch(() => undefined);
+  }
 
   // Step 3: Create the doctor profile using the doctor's own token.
   const res = await fetch(`${doctorBase}/doctors`, {

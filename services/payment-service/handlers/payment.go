@@ -574,14 +574,14 @@ func (h *Handler) RefundPayment(c *gin.Context) {
 		return
 	}
 
-	if payment.Status != models.PaymentCompleted {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("cannot refund payment with status %s; must be COMPLETED", payment.Status)})
-		return
-	}
-
 	if payment.Status == models.PaymentRefunded {
 		// Idempotent: already refunded.
 		c.JSON(http.StatusOK, gin.H{"message": "payment already refunded", "transactionId": transactionID})
+		return
+	}
+
+	if payment.Status != models.PaymentCompleted {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("cannot refund payment with status %s; must be COMPLETED", payment.Status)})
 		return
 	}
 

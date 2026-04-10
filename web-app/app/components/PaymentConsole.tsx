@@ -45,7 +45,7 @@ export default function PaymentConsole() {
         amount: Number(amount),
         currency,
         paymentMethod: "CARD",
-      });
+      }, idToken);
 
       if (!payment.checkoutUrl) {
         throw new Error("Checkout URL not returned from payment service");

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { onAuthStateChanged } from "firebase/auth";
 import { verifyPayment, confirmAppointmentPayment } from "@/app/lib/api";
 import { getFirebaseAuth } from "@/app/lib/firebaseClient";
 
@@ -24,7 +25,13 @@ function PaymentSuccessContent() {
 
         try {
           const auth = getFirebaseAuth();
-          const user = auth.currentUser;
+          // Wait for Firebase Auth to initialize before checking sign-in state.
+          const user = await new Promise<import("firebase/auth").User | null>((resolve) => {
+            const unsubscribe = onAuthStateChanged(auth, (u) => {
+              unsubscribe();
+              resolve(u);
+            });
+          });
           if (!user) {
             setError("Please sign in to verify your payment.");
             setMessage("Verification requires authentication.");

@@ -58,16 +58,16 @@ func RegisterRoutes(r *gin.Engine, h *handlers.Handler) {
 	internal := r.Group("/")
 	internal.Use(requireInternalKey())
 	{
-		internal.POST("/payments", h.CreatePayment)
 		internal.POST("/payments/:transactionId/refund", h.RefundPayment)
-		internal.GET("/payments/:transactionId", h.GetPayment)
 		internal.DELETE("/payments/:transactionId", h.CancelPayment)
 	}
 
-	// User-facing endpoints — require either Bearer token or internal key (C-4).
+	// User-facing and shared service endpoints — require either Bearer token or internal key (C-4).
 	authed := r.Group("/")
 	authed.Use(requireBearerOrInternalKey())
 	{
+		authed.POST("/payments", h.CreatePayment)
+		authed.GET("/payments/:transactionId", h.GetPayment)
 		authed.GET("/payments/verify", h.VerifyPaymentNoWebhook)
 		authed.GET("/patients/:patientId/payments", h.GetPaymentsByPatient)
 	}
