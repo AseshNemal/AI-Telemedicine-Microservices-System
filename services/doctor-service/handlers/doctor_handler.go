@@ -1109,7 +1109,7 @@ func (h *Handler) EndConsultation(c *gin.Context) {
 			case <-t.C:
 			case <-c.Request.Context().Done():
 				t.Stop()
-				break
+				return
 			}
 		}
 		pStatus, _, pErr = outboundJSON(c.Request.Context(), http.MethodPost,
