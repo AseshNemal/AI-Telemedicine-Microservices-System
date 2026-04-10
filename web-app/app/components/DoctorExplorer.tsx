@@ -74,6 +74,11 @@ export default function DoctorExplorer() {
               <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{doctor.specialty}</p>
               <h3 className="mt-1 text-lg font-semibold text-slate-900">{doctor.name}</h3>
               <p className="mt-1 text-sm text-slate-600">{doctor.hospital}</p>
+              {typeof doctor.consultation_fee_cents === "number" && (
+                <p className="mt-1 text-sm font-medium text-blue-700">
+                  Consultation fee: ${(doctor.consultation_fee_cents / 100).toFixed(2)}
+                </p>
+              )}
               <p className="mt-3 text-xs text-slate-500">
                 Availability: {doctor.availability?.join(", ") || "N/A"}
               </p>

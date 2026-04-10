@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
-import { Appointment, getAppointments, getConsultationToken, getMe } from "@/app/lib/api";
+import { Appointment, getAppointments, getConsultationToken, getMe, doctorAcceptAppointment, doctorRejectAppointment } from "@/app/lib/api";
 import { getFirebaseAuth } from "@/app/lib/firebaseClient";
 import { getDashboardPathForRole } from "@/app/lib/roleRouting";
 
@@ -75,6 +75,47 @@ export default function DoctorDashboardPage() {
       setMessage(`Consultation token created: ${result.token.slice(0, 18)}...`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join consultation");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleAccept(id: string) {
+    if (!idToken) {
+      setError("Please sign in again.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await doctorAcceptAppointment(id, idToken);
+      setMessage("Appointment accepted successfully.");
+      const data = await getAppointments(idToken);
+      setAppointments(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to accept appointment");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleReject(id: string) {
+    if (!idToken) {
+      setError("Please sign in again.");
+      return;
+    }
+    if (!confirm("Are you sure you want to reject this appointment? The patient will be refunded automatically.")) return;
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await doctorRejectAppointment(id, idToken);
+      setMessage("Appointment rejected. The patient has been notified and will be refunded.");
+      const data = await getAppointments(idToken);
+      setAppointments(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reject appointment");
     } finally {
       setLoading(false);
     }
@@ -161,12 +202,23 @@ export default function DoctorDashboardPage() {
                   <td className="px-4 py-4 text-slate-600">{appointment.date} {appointment.time}</td>
                   <td className="px-4 py-4 text-slate-700">{appointment.status}</td>
                   <td className="px-4 py-4">
-                    {appointment.status === "BOOKED" ? (
+                    {appointment.status === "CONFIRMED" && (
+                      <div className="flex gap-2">
+                        <button className="btn-primary text-xs" onClick={() => void handleAccept(appointment.id)} disabled={loading}>
+                          Accept
+                        </button>
+                        <button className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100" onClick={() => void handleReject(appointment.id)} disabled={loading}>
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                    {appointment.status === "BOOKED" && (
                       <button className="btn-primary text-xs" onClick={() => void handleJoinConsultation(appointment.id)} disabled={loading}>
                         Join consultation
                       </button>
-                    ) : (
-                      <span className="text-xs text-slate-500">View only</span>
+                    )}
+                    {appointment.status !== "CONFIRMED" && appointment.status !== "BOOKED" && (
+                      <span className="text-xs text-slate-500">{appointment.status === "COMPLETED" ? "Completed" : appointment.status === "REJECTED" ? "Rejected" : "—"}</span>
                     )}
                   </td>
                 </tr>

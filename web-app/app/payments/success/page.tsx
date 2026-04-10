@@ -23,7 +23,16 @@ function PaymentSuccessContent() {
       }
 
         try {
-          const result = await verifyPayment(sessionId);
+          const auth = getFirebaseAuth();
+          const user = auth.currentUser;
+          if (!user) {
+            setError("Please sign in to verify your payment.");
+            setMessage("Verification requires authentication.");
+            return;
+          }
+          const idToken = await user.getIdToken();
+
+          const result = await verifyPayment(sessionId, idToken);
           setMessage(result.message || "Payment verified");
           setStatus(result.status);
 

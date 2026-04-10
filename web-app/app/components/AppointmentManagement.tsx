@@ -156,6 +156,11 @@ export default function AppointmentManagement() {
       return;
     }
 
+    if (!checkoutUrl.startsWith("https://checkout.stripe.com/")) {
+      setError("Invalid checkout link. Please contact support.");
+      return;
+    }
+
     window.location.href = checkoutUrl;
   }
 
@@ -213,16 +218,18 @@ export default function AppointmentManagement() {
   // Get status badge color
   function getStatusColor(status: string) {
     switch (status?.toUpperCase()) {
+      case "PENDING_PAYMENT":
+        return "text-yellow-600";
       case "CONFIRMED":
         return "text-blue-600";
-      case "ACCEPTED":
+      case "BOOKED":
         return "text-green-600";
       case "REJECTED":
         return "text-red-600";
       case "CANCELLED":
         return "text-gray-600";
-      case "PENDING":
-        return "text-yellow-600";
+      case "COMPLETED":
+        return "text-emerald-700";
       default:
         return "text-slate-600";
     }
@@ -347,7 +354,7 @@ export default function AppointmentManagement() {
                 </button>
               </>
             )}
-            {(selectedAppointment.status === "CONFIRMED" || selectedAppointment.status === "ACCEPTED") && (
+            {(selectedAppointment.status === "BOOKED") && (
               <>
                 <button
                   className="btn-primary text-sm"
@@ -364,7 +371,7 @@ export default function AppointmentManagement() {
                 </button>
               </>
             )}
-            {["CONFIRMED", "ACCEPTED", "PENDING"].includes(selectedAppointment.status) && (
+            {["PENDING_PAYMENT", "CONFIRMED", "BOOKED"].includes(selectedAppointment.status) && (
               <button
                 className="btn-secondary text-sm text-red-600"
                 onClick={() => handleCancel(selectedAppointment.id)}
@@ -397,6 +404,7 @@ export default function AppointmentManagement() {
               className="field-input"
               value={newDate}
               onChange={(e) => setNewDate(e.target.value)}
+              min={new Date().toISOString().split("T")[0]}
               required
             />
             <input
@@ -404,6 +412,7 @@ export default function AppointmentManagement() {
               className="field-input"
               value={newTime}
               onChange={(e) => setNewTime(e.target.value)}
+              step="900"
               required
             />
             <textarea

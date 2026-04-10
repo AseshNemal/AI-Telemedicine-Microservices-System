@@ -4,6 +4,8 @@ export type Doctor = {
   specialty: string;
   hospital: string;
   availability: string[];
+  consultation_fee_cents?: number;
+  verification_status?: string;
 };
 
 export type Appointment = {
@@ -217,7 +219,7 @@ export async function cancelAppointment(id: string, idToken: string): Promise<vo
 
 export async function updateAppointmentStatus(
   id: string,
-  payload: { status: "ACCEPTED" | "REJECTED" | "CANCELLED" },
+  payload: { status: "BOOKED" | "REJECTED" | "CANCELLED"; reason?: string },
   idToken: string
 ): Promise<Appointment> {
   const res = await fetch(`${appointmentBase}/appointments/${encodeURIComponent(id)}/status`, {
@@ -232,6 +234,55 @@ export async function updateAppointmentStatus(
   if (!res.ok) {
     const message = await safeMessage(res);
     throw new Error(message || `Failed to update appointment status (${res.status})`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Doctor accepts a CONFIRMED appointment via the doctor-service.
+ * The doctor-service verifies ownership, verification status, and forwards to appointment-service.
+ */
+export async function doctorAcceptAppointment(
+  appointmentId: string,
+  idToken: string
+): Promise<{ message: string }> {
+  const res = await fetch(`${doctorBase}/doctor/appointments/${encodeURIComponent(appointmentId)}/accept`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to accept appointment (${res.status})`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Doctor rejects a CONFIRMED appointment via the doctor-service.
+ * Rejection triggers an automatic refund and patient notification.
+ */
+export async function doctorRejectAppointment(
+  appointmentId: string,
+  idToken: string,
+  reason?: string
+): Promise<{ message: string }> {
+  const res = await fetch(`${doctorBase}/doctor/appointments/${encodeURIComponent(appointmentId)}/reject`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify(reason ? { reason } : {}),
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to reject appointment (${res.status})`);
   }
 
   return res.json();
@@ -386,6 +437,7 @@ export async function createPayment(payload: PaymentCreateRequest): Promise<Paym
 }
 
 export async function createDoctorAccount(payload: DoctorAccountCreateRequest) {
+  // Step 1: Register the doctor in the auth service.
   const authResult = await register({
     fullName: payload.fullName,
     email: payload.email,
@@ -395,9 +447,21 @@ export async function createDoctorAccount(payload: DoctorAccountCreateRequest) {
 
   const doctorId = authResult?.data?.uid || authResult?.uid || "";
 
-  const res = await fetch(`${doctorBase}/doctor`, {
+  // Step 2: Sign in as the new doctor to obtain a Firebase ID token.
+  // POST /doctors requires the DOCTOR role, so we need the doctor's own token.
+  const { signInWithEmailAndPassword } = await import("firebase/auth");
+  const { getFirebaseAuth } = await import("@/app/lib/firebaseClient");
+  const auth = getFirebaseAuth();
+  const credential = await signInWithEmailAndPassword(auth, payload.email, payload.password);
+  const doctorToken = await credential.user.getIdToken();
+
+  // Step 3: Create the doctor profile using the doctor's own token.
+  const res = await fetch(`${doctorBase}/doctors`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${doctorToken}`,
+    },
     body: JSON.stringify({
       id: doctorId,
       name: payload.fullName,
@@ -418,10 +482,13 @@ export async function createDoctorAccount(payload: DoctorAccountCreateRequest) {
   };
 }
 
-export async function verifyPayment(sessionId: string): Promise<PaymentVerifyResponse> {
+export async function verifyPayment(sessionId: string, idToken: string): Promise<PaymentVerifyResponse> {
   const res = await fetch(`${paymentBase}/payments/verify?session_id=${encodeURIComponent(sessionId)}`, {
     method: "GET",
     cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
   });
 
   if (!res.ok) {

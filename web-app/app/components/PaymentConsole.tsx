@@ -1,19 +1,39 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { onAuthStateChanged } from "firebase/auth";
+import { getFirebaseAuth } from "@/app/lib/firebaseClient";
 import { createPayment } from "@/app/lib/api";
 
 export default function PaymentConsole() {
   const [appointmentId, setAppointmentId] = useState("");
   const [patientId, setPatientId] = useState("");
   const [doctorId, setDoctorId] = useState("");
-  const [amount, setAmount] = useState("150");
+  const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("USD");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [idToken, setIdToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    const auth = getFirebaseAuth();
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const token = await user.getIdToken();
+        setIdToken(token);
+      } else {
+        setIdToken(null);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!idToken) {
+      setError("Please sign in to create a payment.");
+      return;
+    }
     setLoading(true);
     setError(null);
 
@@ -29,6 +49,10 @@ export default function PaymentConsole() {
 
       if (!payment.checkoutUrl) {
         throw new Error("Checkout URL not returned from payment service");
+      }
+
+      if (!payment.checkoutUrl.startsWith("https://checkout.stripe.com/")) {
+        throw new Error("Invalid checkout URL received");
       }
 
       window.location.href = payment.checkoutUrl;
@@ -79,13 +103,17 @@ export default function PaymentConsole() {
             required
           />
 
-          <input
+          <select
             className="field-input md:col-span-2"
             value={currency}
-            onChange={(e) => setCurrency(e.target.value.toUpperCase())}
-            placeholder="Currency (USD)"
+            onChange={(e) => setCurrency(e.target.value)}
             required
-          />
+          >
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+            <option value="GBP">GBP</option>
+            <option value="LKR">LKR</option>
+          </select>
 
           <button
             className="btn-primary md:col-span-2"

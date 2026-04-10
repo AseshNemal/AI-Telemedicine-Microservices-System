@@ -45,9 +45,12 @@ export type VerifyPaymentResult = {
 const paymentBase =
   process.env.NEXT_PUBLIC_PAYMENT_SERVICE_URL ?? "http://localhost:8085";
 
-export async function getPayment(transactionId: string): Promise<PaymentRecord | null> {
+export async function getPayment(transactionId: string, idToken: string): Promise<PaymentRecord | null> {
   const res = await fetch(`${paymentBase}/payments/${encodeURIComponent(transactionId)}`, {
     cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
   });
 
   if (res.status === 404) return null;
@@ -59,10 +62,13 @@ export async function getPayment(transactionId: string): Promise<PaymentRecord |
   return res.json();
 }
 
-export async function createPayment(input: CreatePaymentInput): Promise<CreatePaymentResult> {
+export async function createPayment(input: CreatePaymentInput, idToken: string): Promise<CreatePaymentResult> {
   const res = await fetch(`${paymentBase}/payments`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
     body: JSON.stringify(input),
   });
 
@@ -73,10 +79,13 @@ export async function createPayment(input: CreatePaymentInput): Promise<CreatePa
   return res.json();
 }
 
-export async function verifyPayment(sessionId: string): Promise<VerifyPaymentResult> {
+export async function verifyPayment(sessionId: string, idToken: string): Promise<VerifyPaymentResult> {
   const res = await fetch(`${paymentBase}/payments/verify?session_id=${encodeURIComponent(sessionId)}`, {
     method: "GET",
     cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
   });
 
   if (!res.ok) {
