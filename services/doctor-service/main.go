@@ -19,6 +19,12 @@ func main() {
 	db := database.Connect()
 	db.EnsureIndexes()
 
+	// M-5: Fail fast if the internal service key is missing — outbound calls to
+	// appointment-service and patient-service will fail at runtime without it.
+	if strings.TrimSpace(os.Getenv("INTERNAL_SERVICE_KEY")) == "" {
+		log.Fatal("[doctor-service] INTERNAL_SERVICE_KEY env var is required but not set")
+	}
+
 	// 2. Wire handlers.
 	h := handlers.NewHandler(db)
 
