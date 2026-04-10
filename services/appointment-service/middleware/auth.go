@@ -22,9 +22,9 @@ const (
 	CtxRole = "role"
 )
 
-// authServiceURL is resolved once at startup from AUTH_SERVICE_URL.
-// Default matches the Kubernetes service name and port used by the auth-service-node.
-var authServiceURL string
+// authServiceURLs is resolved once at startup from AUTH_SERVICE_URL.
+// When not provided, local/dev and container-network fallbacks are tried.
+var authServiceURLs []string
 
 var authHTTPClient = &http.Client{Timeout: 5 * time.Second}
 
@@ -69,12 +69,69 @@ func startCacheSweep() {
 }
 
 func init() {
-	authServiceURL = os.Getenv("AUTH_SERVICE_URL")
-	if authServiceURL == "" {
-		authServiceURL = "http://auth-service:3001"
+	envURL := strings.TrimSpace(os.Getenv("AUTH_SERVICE_URL"))
+	if envURL != "" {
+		authServiceURLs = []string{envURL}
+	} else {
+		// Local dev defaults first, then container/service-network fallbacks.
+		authServiceURLs = []string{
+			"http://localhost:8081",
+			"http://127.0.0.1:8081",
+			"http://auth-service:5001",
+			"http://auth-service:3001",
+		}
 	}
-	log.Printf("[appointment-service] auth-service URL: %s", authServiceURL)
+	log.Printf("[appointment-service] auth-service URLs: %v", authServiceURLs)
 	startCacheSweep()
+}
+
+func verifyTokenWithAuthService(ctx *gin.Context, authHeader string) (meResponse, error) {
+	var lastErr error
+
+	for _, baseURL := range authServiceURLs {
+		req, err := http.NewRequestWithContext(ctx.Request.Context(), http.MethodGet,
+			baseURL+"/api/auth/me", nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		req.Header.Set("Authorization", authHeader)
+
+		resp, err := authHTTPClient.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode == http.StatusUnauthorized {
+			resp.Body.Close()
+			return meResponse{}, fmt.Errorf("invalid or expired token")
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("auth-service returned %d: %s", resp.StatusCode, string(body))
+			continue
+		}
+
+		var me meResponse
+		if err := json.NewDecoder(resp.Body).Decode(&me); err != nil || !me.Success {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("invalid auth-service response")
+			continue
+		}
+
+		resp.Body.Close()
+
+		return me, nil
+	}
+
+	if lastErr == nil {
+		lastErr = fmt.Errorf("auth-service unreachable")
+	}
+
+	return meResponse{}, lastErr
 }
 
 // meResponse is the subset of the auth-service GET /api/auth/me response we care about.
@@ -116,38 +173,18 @@ func VerifyToken() gin.HandlerFunc {
 			identityCache.Delete(cacheKey) // evict expired entry
 		}
 
-		// Forward the token to the auth-service.
-		req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet,
-			authServiceURL+"/api/auth/me", nil)
+		me, err := verifyTokenWithAuthService(c, authHeader)
 		if err != nil {
-			log.Printf("[appointment-service] could not build auth request: %v", err)
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "auth service unavailable"})
-			return
-		}
-		req.Header.Set("Authorization", authHeader)
-
-		resp, err := authHTTPClient.Do(req)
-		if err != nil {
-			log.Printf("[appointment-service] auth-service unreachable: %v", err)
+			log.Printf("[appointment-service] auth verification failed: %v", err)
+			if strings.Contains(err.Error(), "invalid or expired token") {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+				return
+			}
+			if strings.Contains(err.Error(), "returned") || strings.Contains(err.Error(), "response") {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token verification failed"})
+				return
+			}
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "could not reach auth service"})
-			return
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode == http.StatusUnauthorized {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
-			return
-		}
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			log.Printf("[appointment-service] auth-service returned %d: %s", resp.StatusCode, string(body))
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token verification failed"})
-			return
-		}
-
-		var me meResponse
-		if err := json.NewDecoder(resp.Body).Decode(&me); err != nil || !me.Success {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid auth-service response"})
 			return
 		}
 

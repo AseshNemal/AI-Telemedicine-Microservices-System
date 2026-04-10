@@ -16,6 +16,7 @@ import (
 )
 
 const defaultTokenTTL = 3600
+const defaultRoomEmptyTimeout = 300
 
 type LiveKitService struct {
 	apiKey     string
@@ -107,12 +108,17 @@ func (s *LiveKitService) CreateRoom(req models.CreateRoomRequest) (*models.RoomR
 		return nil, errors.New("roomName is required")
 	}
 
+	emptyTimeout := req.EmptyTimeout
+	if emptyTimeout == 0 {
+		emptyTimeout = defaultRoomEmptyTimeout
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	room, err := s.roomClient.CreateRoom(ctx, &livekit.CreateRoomRequest{
 		Name:            req.RoomName,
-		EmptyTimeout:    req.EmptyTimeout,
+		EmptyTimeout:    emptyTimeout,
 		MaxParticipants: req.MaxParticipants,
 		Metadata:        req.Metadata,
 	})

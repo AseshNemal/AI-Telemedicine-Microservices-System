@@ -23,13 +23,18 @@ spec:
           image: auth-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 5001
+            - containerPort: 8081
           env:
             - name: PORT
               valueFrom:
                 configMapKeyRef:
                   name: telemedicine-config
                   key: AUTH_PORT
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NODE_ENV
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -50,11 +55,11 @@ spec:
                 secretKeyRef:
                   name: telemedicine-secrets
                   key: FIREBASE_PRIVATE_KEY
-            - name: NODE_ENV
+            - name: FIREBASE_WEB_API_KEY
               valueFrom:
-                configMapKeyRef:
-                  name: telemedicine-config
-                  key: NODE_ENV
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: FIREBASE_WEB_API_KEY
             - name: SENDGRID_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -65,7 +70,22 @@ spec:
                 secretKeyRef:
                   name: telemedicine-secrets
                   key: SENDGRID_SENDER_EMAIL
-          
+            - name: INTERNAL_SERVICE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: INTERNAL_SERVICE_KEY
+            - name: ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: ADMIN_EMAIL
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: ADMIN_PASSWORD
+
           resources:
             requests:
               memory: "128Mi"
@@ -73,34 +93,24 @@ spec:
             limits:
               memory: "256Mi"
               cpu: "500m"
-          
+
           livenessProbe:
             httpGet:
-              path: /api/auth/health
-              port: 5001
+              path: /health
+              port: 8081
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
-          
+
           readinessProbe:
             httpGet:
-              path: /api/auth/health
-              port: 5001
+              path: /health
+              port: 8081
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 2
-          
-          volumeMounts:
-            - name: firebase-secret
-              mountPath: /var/secrets/firebase
-              readOnly: true
-      
-      volumes:
-        - name: firebase-secret
-          secret:
-            secretName: firebase-service-account
 
 ---
 apiVersion: v1
@@ -112,7 +122,7 @@ spec:
   selector:
     app: auth-service
   ports:
-    - port: 5001
-      targetPort: 5001
+    - port: 8081
+      targetPort: 8081
       protocol: TCP
   type: ClusterIP

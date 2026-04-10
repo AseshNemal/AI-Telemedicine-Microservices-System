@@ -10,10 +10,12 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	// 1. Connect to MongoDB and ensure indexes are in place.
+	_ = godotenv.Load("../../.env")
+
 	db := database.Connect()
 	db.EnsureIndexes()
 
@@ -22,32 +24,26 @@ func main() {
 
 	router := gin.Default()
 
-	// 3. CORS — restrict to known origins in production via DOCTOR_CORS_ORIGINS env var.
-	// Multiple origins may be specified as a comma-separated list.
-	allowedOrigins := []string{"http://localhost:3000", "http://127.0.0.1:3000"}
-	if envOrigins := os.Getenv("DOCTOR_CORS_ORIGINS"); envOrigins != "" {
-		parts := strings.Split(envOrigins, ",")
-		parsed := make([]string, 0, len(parts))
-		for _, o := range parts {
-			if trimmed := strings.TrimSpace(o); trimmed != "" {
-				parsed = append(parsed, trimmed)
-			}
-		}
-		// Only adopt the env-var list if it produced at least one valid origin.
-		if len(parsed) > 0 {
-			allowedOrigins = parsed
-		}
-	}
-
+	// CORS: allow the frontend (localhost:3000) and common local origins
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     allowedOrigins,
+		AllowOrigins:     []string{"http://localhost:3000", "http://127.0.0.1:3000"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Internal-Key"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 	}))
 
-	// 4. Register all routes (public + authenticated + internal).
+	// Fallback header middleware to ensure CORS header appears for simple responses
+	router.Use(func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "http://localhost:3000")
+		c.Header("Access-Control-Allow-Credentials", "true")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	})
+
 	routes.RegisterRoutes(router, h)
 
 	port := os.Getenv("PORT")

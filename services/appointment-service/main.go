@@ -10,9 +10,13 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Load environment variables from .env file
+	godotenv.Load("../../.env")
+
 	// 1. Connect to MongoDB and ensure indexes are in place.
 	db := database.Connect()
 	db.EnsureIndexes()

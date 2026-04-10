@@ -4,7 +4,39 @@ metadata:
   name: telemedicine-config
   namespace: default
 data:
-  # NOTE: All environment variables are loaded from root .env file
-  # This ConfigMap is populated dynamically by deploy-k8s.sh script
-  # Do NOT edit values here - update root .env file instead
   NODE_ENV: "production"
+
+  # ── Service ports (match root .env) ──────────────────────────────────────────
+  AUTH_PORT: "8081"
+  PATIENT_PORT: "5002"
+  DOCTOR_PORT: "8082"
+  APPOINTMENT_PORT: "8083"
+  NOTIFICATION_PORT: "8084"
+  PAYMENT_PORT: "8085"
+  TELEMEDICINE_PORT: "8086"
+  SYMPTOM_SERVICE_PORT: "8091"
+
+  # ── Internal service URLs (cluster-internal) ──────────────────────────────────
+  AUTH_SERVICE_URL: "http://auth-service:8081"
+  PAYMENT_SERVICE_URL: "http://payment-service:8085"
+  APPOINTMENT_SERVICE_URL: "http://appointment-service:8083"
+  NOTIFICATION_SERVICE_URL: "http://notification-service:8084"
+  PATIENT_SERVICE_URL: "http://patient-service:5002"
+  SYMPTOM_SERVICE_URL: "http://symptom-service:8091"
+  LIVEKIT_URL: "wss://ai-telemedicine-5kuq9m1m.livekit.cloud"
+
+  # ── Frontend → backend URLs (routed via API Gateway) ─────────────────────────
+  # Point all frontend URLs at the single api-gateway LoadBalancer
+  NEXT_PUBLIC_AUTH_SERVICE_URL: "http://localhost"
+  NEXT_PUBLIC_PATIENT_SERVICE_URL: "http://localhost"
+  NEXT_PUBLIC_DOCTOR_SERVICE_URL: "http://localhost"
+  NEXT_PUBLIC_APPOINTMENT_SERVICE_URL: "http://localhost"
+  NEXT_PUBLIC_PAYMENT_SERVICE_URL: "http://localhost"
+  NEXT_PUBLIC_SYMPTOM_SERVICE_URL: "http://localhost"
+
+  # ── Firebase (public vars only – secrets are in telemedicine-secrets) ─────────
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: "telemedicine-micro-system"
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "telemedicine-micro-system.firebaseapp.com"
+
+  # ── Google OAuth ──────────────────────────────────────────────────────────────
+  GOOGLE_CLIENT_ID: "238787401264-np07c57jdpk7hvonbeoif70fjrfihiog.apps.googleusercontent.com"

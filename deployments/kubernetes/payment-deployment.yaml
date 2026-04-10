@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: payment-service
+  namespace: default
   labels:
     app: payment-service
     component: backend
@@ -36,38 +37,53 @@ spec:
       containers:
       - name: payment-service
         image: payment-service:latest
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         ports:
         - name: http
           containerPort: 8085
           protocol: TCP
         env:
         - name: PORT
-          value: "8085"
-        - name: ENV
           valueFrom:
             configMapKeyRef:
-              name: payment-service-config
-              key: env
+              name: telemedicine-config
+              key: PAYMENT_PORT
+        - name: NODE_ENV
+          valueFrom:
+            configMapKeyRef:
+              name: telemedicine-config
+              key: NODE_ENV
+        - name: APPOINTMENT_SERVICE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: telemedicine-config
+              key: APPOINTMENT_SERVICE_URL
         - name: DATABASE_URL
           valueFrom:
             secretKeyRef:
-              name: payment-service-secrets
-              key: database-url
-        - name: MONGODB_HOST
-          value: "mongodb-payment"
-        - name: MONGODB_PORT
-          value: "27017"
-        - name: MONGODB_USER
+              name: telemedicine-secrets
+              key: DATABASE_URL
+        - name: STRIPE_SECRET_KEY
           valueFrom:
             secretKeyRef:
-              name: mongodb-payment-credentials
-              key: username
-        - name: MONGODB_PASSWORD
+              name: telemedicine-secrets
+              key: STRIPE_SECRET_KEY
+        - name: STRIPE_WEBHOOK_SECRET
           valueFrom:
             secretKeyRef:
-              name: mongodb-payment-credentials
-              key: password
+              name: telemedicine-secrets
+              key: STRIPE_WEBHOOK_SECRET
+        - name: STRIPE_PUBLIC_KEY
+          valueFrom:
+            secretKeyRef:
+              name: telemedicine-secrets
+              key: STRIPE_PUBLIC_KEY
+        - name: INTERNAL_SERVICE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: telemedicine-secrets
+              key: INTERNAL_SERVICE_KEY
+
         livenessProbe:
           httpGet:
             path: /health
@@ -76,6 +92,7 @@ spec:
           periodSeconds: 10
           timeoutSeconds: 5
           failureThreshold: 3
+
         readinessProbe:
           httpGet:
             path: /health
@@ -84,6 +101,7 @@ spec:
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 2
+
         resources:
           requests:
             memory: "128Mi"
@@ -91,12 +109,13 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "500m"
-      restartPolicy: Always
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: payment-service
+  namespace: default
   labels:
     app: payment-service
     component: backend
@@ -110,33 +129,3 @@ spec:
     targetPort: http
     protocol: TCP
   sessionAffinity: None
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: payment-service-config
-  labels:
-    app: payment-service
-data:
-  env: "production"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: payment-service-secrets
-  labels:
-    app: payment-service
-type: Opaque
-stringData:
-  database-url: "mongodb://admin:admin@mongodb-payment:27017/payment-db?authSource=admin"
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: mongodb-payment-credentials
-  labels:
-    app: payment-service
-type: Opaque
-stringData:
-  username: "admin"
-  password: "admin"

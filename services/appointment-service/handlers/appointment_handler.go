@@ -52,22 +52,22 @@ type Handler struct {
 func NewHandler(db *database.Client) *Handler {
 	doctorBase := os.Getenv("DOCTOR_SERVICE_URL")
 	if doctorBase == "" {
-		doctorBase = "http://doctor-service:8082"
+		doctorBase = "http://localhost:8082"
 	}
 
 	paymentBase := os.Getenv("PAYMENT_SERVICE_URL")
 	if paymentBase == "" {
-		paymentBase = "http://payment-service:8085"
+		paymentBase = "http://localhost:8085"
 	}
 
 	notifBase := os.Getenv("NOTIFICATION_SERVICE_URL")
 	if notifBase == "" {
-		notifBase = "http://notification-service:8084"
+		notifBase = "http://localhost:8084"
 	}
 
 	telemediaBase := os.Getenv("TELEMEDICINE_SERVICE_URL")
 	if telemediaBase == "" {
-		telemediaBase = "http://telemedicine-service:8086"
+		telemediaBase = "http://localhost:8086"
 	}
 
 	return &Handler{
@@ -526,6 +526,114 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 			"specialty":     appt.Specialty,
 			"date":          appt.Date,
 			"time":          appt.Time,
+			"status":        models.StatusConfirmed,
+			"paymentStatus": models.PaymentCompleted,
+		},
+	})
+}
+
+// ConfirmPaymentInternal is an internal service-to-service endpoint called by
+// payment-service after Stripe verification succeeds.
+//
+// POST /internal/appointments/:id/confirm-payment
+// Headers:
+//   X-Internal-Service-Key: <INTERNAL_SERVICE_KEY>
+// Body (optional): {"transactionId":"..."}
+func (h *Handler) ConfirmPaymentInternal(c *gin.Context) {
+	configuredKey := strings.TrimSpace(os.Getenv("INTERNAL_SERVICE_KEY"))
+	providedKey := strings.TrimSpace(c.GetHeader("X-Internal-Service-Key"))
+	if configuredKey == "" || providedKey == "" || providedKey != configuredKey {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized internal request"})
+		return
+	}
+
+	id := c.Param("id")
+	if !validateID(c, id) {
+		return
+	}
+
+	var req struct {
+		TransactionID string `json:"transactionId"`
+	}
+	if c.ContentType() == "application/json" {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body", "details": err.Error()})
+			return
+		}
+	}
+
+	appt, ok := h.fetchAppointment(c, id)
+	if !ok {
+		return
+	}
+
+	if appt.Status != models.StatusPendingPayment {
+		// Idempotent success for already-confirmed (or later) appointments.
+		if appt.Status == models.StatusConfirmed || appt.Status == models.StatusBooked || appt.Status == models.StatusCompleted {
+			c.JSON(http.StatusOK, gin.H{"message": "appointment already confirmed", "status": appt.Status})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("payment confirmation is not applicable for appointments with status %s", appt.Status),
+		})
+		return
+	}
+
+	if appt.TransactionID == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "appointment has no associated payment transaction"})
+		return
+	}
+
+	txnToVerify := appt.TransactionID
+	if req.TransactionID != "" {
+		// Trust payment-service supplied transaction id for backward compatibility
+		// with legacy appointments that stored a Mongo _id instead of TXN-*.
+		txnToVerify = req.TransactionID
+	}
+
+	verification, err := h.paymentSvc.VerifyPayment(txnToVerify)
+	if err != nil {
+		log.Printf("[appointment-service] internal payment verification failed for %s (txn=%s): %v", id, txnToVerify, err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "payment verification failed", "details": err.Error()})
+		return
+	}
+
+	if verification.Status != models.PaymentCompleted {
+		c.JSON(http.StatusPaymentRequired, gin.H{
+			"error":         "payment has not been completed",
+			"paymentStatus": verification.Status,
+		})
+		return
+	}
+
+	updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer updateCancel()
+
+	res, err := h.db.DB.Collection("appointments").UpdateOne(
+		updateCtx,
+		bson.M{"id": id, "status": models.StatusPendingPayment},
+		bson.M{"$set": bson.M{
+			"status":        models.StatusConfirmed,
+			"paymentStatus": models.PaymentCompleted,
+			"transactionId": txnToVerify,
+			"updatedAt":     time.Now().UTC(),
+		}},
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to confirm appointment", "details": err.Error()})
+		return
+	}
+	if res.MatchedCount == 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "appointment status changed concurrently; please retry"})
+		return
+	}
+
+	go h.notifSvc.SendPaymentConfirmation(appt.ID, appt.PatientEmail, appt.PatientName, doctorDisplayName(appt), appt.Specialty, appt.Date, appt.Time)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Payment confirmed automatically.",
+		"appointment": gin.H{
+			"id":            appt.ID,
 			"status":        models.StatusConfirmed,
 			"paymentStatus": models.PaymentCompleted,
 		},

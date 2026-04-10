@@ -25,8 +25,9 @@ spec:
           ports:
             - name: http
               containerPort: 3000
+
           env:
-            # ConfigMap vars
+            # ── Public service URLs (via API Gateway) ────────────────────────
             - name: NEXT_PUBLIC_AUTH_SERVICE_URL
               valueFrom:
                 configMapKeyRef:
@@ -52,6 +53,18 @@ spec:
                 configMapKeyRef:
                   name: telemedicine-config
                   key: NEXT_PUBLIC_PAYMENT_SERVICE_URL
+            - name: NEXT_PUBLIC_SYMPTOM_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_SYMPTOM_SERVICE_URL
+            - name: SYMPTOM_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: SYMPTOM_SERVICE_URL
+
+            # ── Firebase (public vars) ────────────────────────────────────────
             - name: NEXT_PUBLIC_FIREBASE_PROJECT_ID
               valueFrom:
                 configMapKeyRef:
@@ -62,18 +75,22 @@ spec:
                 configMapKeyRef:
                   name: telemedicine-config
                   key: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+
+            # ── Google OAuth ──────────────────────────────────────────────────
             - name: GOOGLE_CLIENT_ID
               valueFrom:
                 configMapKeyRef:
                   name: telemedicine-config
                   key: GOOGLE_CLIENT_ID
+
+            # ── LiveKit URL ───────────────────────────────────────────────────
             - name: LIVEKIT_URL
               valueFrom:
                 configMapKeyRef:
                   name: telemedicine-config
                   key: LIVEKIT_URL
-            
-            # Secret vars
+
+            # ── Secrets ────────────────────────────────────────────────────────
             - name: NEXT_PUBLIC_FIREBASE_API_KEY
               valueFrom:
                 secretKeyRef:
@@ -84,7 +101,12 @@ spec:
                 secretKeyRef:
                   name: telemedicine-secrets
                   key: STRIPE_PUBLIC_KEY
-          
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: GOOGLE_CLIENT_SECRET
+
           resources:
             requests:
               memory: "256Mi"
@@ -92,20 +114,20 @@ spec:
             limits:
               memory: "512Mi"
               cpu: "500m"
-          
+
           livenessProbe:
             httpGet:
               path: /
-              port: 3000
+              port: http
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
             failureThreshold: 3
-          
+
           readinessProbe:
             httpGet:
               path: /
-              port: 3000
+              port: http
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3

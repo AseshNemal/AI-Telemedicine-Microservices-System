@@ -1,6 +1,6 @@
 const { createFirebaseUserWithRole } = require('../services/firebaseAuthService');
 const { upsertAppUserMirror, findAppUserByUid, buildMeResponse } = require('../services/authService');
-const { createDefaultPatientProfile } = require('../utils/patientServiceClient');
+const { createDefaultPatientProfile, getOrCreatePatientProfile } = require('../utils/patientServiceClient');
 
 // @route  POST /api/auth/register
 // @access Public
@@ -97,12 +97,50 @@ exports.me = async (req, res, next) => {
             });
         }
 
-        const appUser = await findAppUserByUid(uid);
+        let appUser = await findAppUserByUid(uid);
+
+        if (!appUser) {
+            const fallbackName = req.user.email ? req.user.email.split('@')[0] : 'User';
+            appUser = await upsertAppUserMirror({
+                firebaseUid: uid,
+                fullName: req.user.claims && req.user.claims.name ? req.user.claims.name : fallbackName,
+                email: req.user.email,
+                phone: null,
+                role: req.user.role || 'PATIENT',
+                isVerified: Boolean(req.user.claims && req.user.claims.email_verified),
+            });
+        }
+
         const meData = buildMeResponse(req.user, appUser);
+        let profileSync = {
+            status: 'not-required',
+        };
+
+        if (meData.role === 'PATIENT') {
+            try {
+                const profileResult = await getOrCreatePatientProfile({
+                    authUserId: uid,
+                    fullName: meData.fullName || (req.user.email ? req.user.email.split('@')[0] : 'User'),
+                    email: meData.email,
+                    phone: appUser ? appUser.phone : null,
+                });
+
+                profileSync = {
+                    status: profileResult.status,
+                };
+            } catch (profileErr) {
+                console.error('[auth-service] Failed to sync patient profile in /me:', profileErr.message);
+                profileSync = {
+                    status: 'pending-retry',
+                    message: 'Patient profile sync failed. Retry is required.',
+                };
+            }
+        }
 
         return res.status(200).json({
             success: true,
             data: meData,
+            profileSync,
         });
     } catch (err) {
         return next(err);

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import LogoutButton from "@/app/components/LogoutButton";
+import HeaderAuthAction from "@/app/components/HeaderAuthAction";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -45,15 +47,13 @@ export default function RootLayout({
                 Telemedicine
               </Link>
               <div className="flex flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-sm">
-                <Link href="/auth" className="rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Access</Link>
-                <Link href="/doctors" className="rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Doctors</Link>
                 <Link href="/appointments" className="rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Appointments</Link>
-                <Link href="/payments" className="rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Payments</Link>
+                <Link href="/doctors" className="rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Doctor List</Link>
                 <Link href="/symptoms" className="rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Symptoms</Link>
+                <Link href="/telemedicine" className="rounded-lg px-3 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">Telemedicine</Link>
+                <LogoutButton />
               </div>
-              <Link href="/symptoms" className="btn-primary text-xs md:text-sm">
-                Check Symptoms
-              </Link>
+              <HeaderAuthAction />
             </nav>
           </header>
 

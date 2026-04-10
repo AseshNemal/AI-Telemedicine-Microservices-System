@@ -3,14 +3,14 @@ FROM node:22-alpine AS dependencies
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+RUN npm install --omit=dev --no-audit --no-fund
 
 FROM node:22-alpine AS builder
 
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+RUN npm install --no-audit --no-fund
 
 COPY . .
 RUN npm run build
@@ -20,8 +20,6 @@ FROM node:22-alpine
 WORKDIR /app
 
 ENV NODE_ENV=production
-
-RUN npm install -g npm@latest
 
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY --from=builder /app/.next ./.next

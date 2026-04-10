@@ -1,45 +1,89 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getMe, register } from "@/app/lib/api";
 import { getFirebaseAuth, getGoogleProvider } from "@/app/lib/firebaseClient";
+import { getDashboardPathForRole } from "@/app/lib/roleRouting";
 import {
   signInWithEmailAndPassword,
   signInWithPopup,
 } from "firebase/auth";
 
 export default function AuthPage() {
+  const router = useRouter();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [registerMessage, setRegisterMessage] = useState<string | null>(null);
   const [loginMessage, setLoginMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const loginFormRef = useRef<HTMLFormElement | null>(null);
+
+  const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL ?? "";
+  const adminPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD ?? "";
+  const hasAdminDemoCredentials = Boolean(adminEmail && adminPassword);
+
+  function toFriendlyError(err: unknown) {
+    if (!(err instanceof Error)) {
+      return "Authentication failed. Please try again.";
+    }
+
+    const msg = err.message;
+
+    if (msg.includes("auth/invalid-credential")) {
+      return "Invalid email or password.";
+    }
+
+    if (msg.includes("auth/popup-closed-by-user")) {
+      return "Google sign-in popup was closed before completion.";
+    }
+
+    if (msg.includes("auth/network-request-failed")) {
+      return "Network error while contacting Firebase. Check your internet and try again.";
+    }
+
+    if (msg.includes("Missing Firebase config")) {
+      return msg;
+    }
+
+    return msg;
+  }
 
   async function onRegister(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setRegisterMessage(null);
+    setLoginMessage(null);
+    setLoading(true);
 
     const form = new FormData(e.currentTarget);
-    const roleMap = {
-      Patient: "PATIENT",
-      Doctor: "DOCTOR",
-      Admin: "ADMIN",
-    } as const;
-
-    const selectedRole = String(form.get("role") || "Patient") as keyof typeof roleMap;
-
     const payload = {
       fullName: String(form.get("name") || ""),
       email: String(form.get("email") || ""),
       password: String(form.get("password") || ""),
-      role: roleMap[selectedRole] || "PATIENT",
+      role: "PATIENT" as const,
     };
 
     try {
       const response = await register(payload);
+
+      const auth = getFirebaseAuth();
+      const credential = await signInWithEmailAndPassword(
+        auth,
+        payload.email,
+        payload.password,
+      );
+      const idToken = await credential.user.getIdToken();
+      const me = await getMe(idToken);
+      const role = me?.data?.role || "USER";
+
       setRegisterMessage(response.message || "Registered");
+      setLoginMessage(`Account created and signed in as ${role}.`);
+      router.push(getDashboardPathForRole(role));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Register failed");
+      setError(toFriendlyError(err));
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -47,6 +91,8 @@ export default function AuthPage() {
     e.preventDefault();
     setError(null);
     setLoginMessage(null);
+    setRegisterMessage(null);
+    setLoading(true);
 
     const form = new FormData(e.currentTarget);
     const email = String(form.get("email") || "").trim();
@@ -59,14 +105,19 @@ export default function AuthPage() {
       const me = await getMe(idToken);
       const role = me?.data?.role || "USER";
       setLoginMessage(`Signed in successfully as ${role}. Your care dashboard is ready.`);
+      router.push(getDashboardPathForRole(role));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(toFriendlyError(err));
+    } finally {
+      setLoading(false);
     }
   }
 
   async function onGoogleLogin() {
     setError(null);
     setLoginMessage(null);
+    setRegisterMessage(null);
+    setLoading(true);
 
     try {
       const auth = getFirebaseAuth();
@@ -75,161 +126,195 @@ export default function AuthPage() {
       const me = await getMe(idToken);
       const role = me?.data?.role || "USER";
       setLoginMessage(`Google sign-in successful as ${role}. Welcome, ${result.user.displayName || "user"}.`);
+      router.push(getDashboardPathForRole(role));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Google login failed");
+      setError(toFriendlyError(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function fillAdminDemoCredentials() {
+    if (!hasAdminDemoCredentials) {
+      setError("Admin demo credentials are not configured in environment variables.");
+      return;
+    }
+
+    const form = loginFormRef.current;
+    if (!form) {
+      return;
+    }
+
+    const emailInput = form.elements.namedItem("email");
+    const passwordInput = form.elements.namedItem("password");
+
+    if (emailInput instanceof HTMLInputElement) {
+      emailInput.value = adminEmail;
+    }
+    if (passwordInput instanceof HTMLInputElement) {
+      passwordInput.value = adminPassword;
     }
   }
 
   return (
-    <main className="mx-auto min-h-[calc(100vh-220px)] w-full max-w-6xl px-4 py-8 md:px-8 md:py-12">
-      <div className="relative overflow-hidden rounded-[34px] border border-fuchsia-200/40 bg-[radial-gradient(circle_at_20%_20%,#65d8dd_0,#65d8dd_17%,transparent_45%),radial-gradient(circle_at_85%_15%,#ff8f86_0,#ff8f86_18%,transparent_40%),radial-gradient(circle_at_86%_80%,#7ed6ea_0,#7ed6ea_16%,transparent_38%),#f99086] p-4 shadow-[0_24px_80px_rgba(15,23,42,0.20)] md:p-8">
-        <div className="relative grid overflow-hidden rounded-[28px] bg-white/94 shadow-[0_16px_50px_rgba(15,23,42,0.16)] md:grid-cols-[1fr_1.05fr]">
-          <section className="relative isolate overflow-hidden bg-gradient-to-br from-violet-500 via-violet-500 to-indigo-400 px-8 py-12 text-white md:px-12 md:py-16">
-            <div className="pointer-events-none absolute -left-10 -top-10 h-36 w-36 rounded-full bg-cyan-200/25 blur-2xl" />
-            <div className="pointer-events-none absolute -bottom-16 -right-10 h-48 w-48 rounded-full bg-white/12 blur-2xl" />
-
-            <div className="relative mx-auto flex max-w-sm flex-col items-center text-center">
-              <div className="mb-8 grid h-28 w-28 place-items-center rounded-full bg-white/18 shadow-inner">
-                <span className="text-5xl">💜</span>
-              </div>
-              <h2 className="text-4xl font-black tracking-[0.22em]">HEALTHCARE</h2>
-              <p className="mt-8 max-w-xs text-2xl font-semibold leading-snug text-violet-50/95">
-                All your healthcare need on your finger tips
+    <main className="mx-auto min-h-[calc(100vh-180px)] w-full max-w-6xl px-4 py-8 md:px-8 md:py-12">
+      <div className="overflow-hidden rounded-[30px] border border-slate-200 bg-[linear-gradient(120deg,#0f172a_0%,#102a43_45%,#124559_100%)] shadow-[0_24px_80px_rgba(2,6,23,0.35)]">
+        <div className="grid md:grid-cols-[1.05fr_1fr]">
+          <section className="relative overflow-hidden px-8 py-12 text-white md:px-12 md:py-14">
+            <div className="absolute -left-14 top-12 h-44 w-44 rounded-full bg-cyan-300/20 blur-3xl" />
+            <div className="absolute bottom-0 right-0 h-56 w-56 rounded-full bg-amber-300/20 blur-3xl" />
+            <div className="relative space-y-5">
+              <p className="inline-flex rounded-full border border-cyan-200/40 bg-cyan-100/10 px-3 py-1 text-xs tracking-[0.16em] text-cyan-100">
+                TELEMEDICINE ACCESS
               </p>
+              <h1 className="max-w-md text-4xl font-black leading-tight md:text-5xl">
+                Secure sign-in for every care journey.
+              </h1>
+              <p className="max-w-md text-base text-slate-100/85 md:text-lg">
+                Use your email or Google account to access appointments, records, and tele-consultation sessions.
+              </p>
+              <div className="mt-8 grid max-w-md grid-cols-3 gap-3 text-xs text-slate-100/90">
+                <div className="rounded-xl border border-white/20 bg-white/10 px-3 py-2">OAuth</div>
+                <div className="rounded-xl border border-white/20 bg-white/10 px-3 py-2">JWT Ready</div>
+                <div className="rounded-xl border border-white/20 bg-white/10 px-3 py-2">HIPAA-minded</div>
+              </div>
             </div>
           </section>
 
-          <section className="relative bg-white px-6 py-8 md:px-14 md:py-14">
-            <div className="mx-auto max-w-md">
-              <div className="mb-8 flex items-center justify-between">
-                <div className="inline-flex rounded-full border border-violet-200 bg-violet-50 p-1 text-xs font-semibold">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode("login");
-                      setError(null);
-                    }}
-                    className={`rounded-full px-4 py-1.5 transition ${
-                      mode === "login" ? "bg-violet-600 text-white" : "text-violet-600 hover:bg-violet-100"
-                    }`}
-                  >
-                    Sign in
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode("register");
-                      setError(null);
-                    }}
-                    className={`rounded-full px-4 py-1.5 transition ${
-                      mode === "register" ? "bg-violet-600 text-white" : "text-violet-600 hover:bg-violet-100"
-                    }`}
-                  >
-                    Register
-                  </button>
-                </div>
+          <section className="bg-white px-6 py-8 md:px-10 md:py-10">
+            <div className="mx-auto max-w-md space-y-5">
+              <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1 text-sm font-semibold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("login");
+                    setError(null);
+                  }}
+                  className={`rounded-full px-4 py-1.5 transition ${
+                    mode === "login" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  Login
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("register");
+                    setError(null);
+                  }}
+                  className={`rounded-full px-4 py-1.5 transition ${
+                    mode === "register" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  Register
+                </button>
               </div>
 
               {mode === "login" ? (
-                <form onSubmit={onLogin} className="space-y-5">
+                <form ref={loginFormRef} onSubmit={onLogin} className="space-y-4">
                   <div>
-                    <h1 className="text-5xl font-extrabold leading-none text-slate-900">Welcome User</h1>
-                    <p className="mt-2 text-3xl font-light text-slate-500">Sign in to continue</p>
+                    <h2 className="text-3xl font-extrabold text-slate-900">Welcome back</h2>
+                    <p className="text-slate-600">Login with your Firebase credentials.</p>
                   </div>
 
-                  <div className="space-y-4 pt-3">
-                    <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      Email
-                      <input
-                        name="email"
-                        type="email"
-                        className="mt-2 h-11 w-full border-0 border-b border-slate-200 bg-transparent px-0 text-base text-slate-800 outline-none transition focus:border-violet-500"
-                        required
-                      />
-                    </label>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Email
+                    <input
+                      name="email"
+                      type="email"
+                      className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none transition focus:border-cyan-500"
+                      required
+                    />
+                  </label>
 
-                    <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                      Password
-                      <input
-                        name="password"
-                        type="password"
-                        className="mt-2 h-11 w-full border-0 border-b border-slate-200 bg-transparent px-0 text-base text-slate-800 outline-none transition focus:border-violet-500"
-                        required
-                      />
-                    </label>
-                  </div>
-
-                  <div className="text-right text-sm">
-                    <button type="button" className="font-semibold text-violet-500 hover:text-violet-700">
-                      Forget Password ?
-                    </button>
-                  </div>
+                  <label className="block text-sm font-medium text-slate-700">
+                    Password
+                    <input
+                      name="password"
+                      type="password"
+                      className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none transition focus:border-cyan-500"
+                      required
+                    />
+                  </label>
 
                   <button
-                    className="h-13 w-full rounded-lg bg-gradient-to-r from-violet-400 to-indigo-400 px-4 py-3 text-xl font-bold text-white shadow-[0_8px_24px_rgba(124,95,255,0.35)] transition hover:brightness-105"
+                    className="h-11 w-full rounded-xl bg-slate-900 px-4 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
                     type="submit"
+                    disabled={loading}
                   >
-                    SIGN IN
+                    {loading ? "Signing in..." : "Login"}
                   </button>
 
                   <button
                     type="button"
                     onClick={onGoogleLogin}
-                    className="h-12 w-full rounded-lg border border-violet-200 bg-white px-4 py-3 text-sm font-semibold text-violet-700 shadow-sm transition hover:bg-violet-50"
+                    disabled={loading}
+                    className="h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     Continue with Google
                   </button>
 
-                  {loginMessage && <p className="text-sm font-medium text-emerald-700 break-all">{loginMessage}</p>}
+                  {hasAdminDemoCredentials && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={fillAdminDemoCredentials}
+                        disabled={loading}
+                        className="h-10 w-full rounded-xl border border-dashed border-cyan-300 bg-cyan-50 px-4 text-xs font-semibold text-cyan-800 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Use admin demo credentials
+                      </button>
+
+                      <p className="text-xs text-slate-500">
+                        Admin demo email: <span className="font-semibold text-slate-700">{adminEmail}</span>. Doctor and admin accounts route to dedicated dashboards after sign-in.
+                      </p>
+                    </>
+                  )}
                 </form>
               ) : (
                 <form onSubmit={onRegister} className="space-y-4">
                   <div>
-                    <h1 className="text-4xl font-extrabold leading-none text-slate-900">Create Account</h1>
-                    <p className="mt-2 text-2xl font-light text-slate-500">Set up your secure access</p>
+                    <h2 className="text-3xl font-extrabold text-slate-900">Create account</h2>
+                    <p className="text-slate-600">Patient registration only. Doctors and admins are provisioned by staff.</p>
                   </div>
 
                   <input
                     name="name"
                     placeholder="Full Name"
-                    className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-violet-500"
+                    className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500"
                     required
                   />
                   <input
                     name="email"
                     type="email"
                     placeholder="Email"
-                    className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-violet-500"
+                    className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500"
                     required
                   />
                   <input
                     name="password"
                     type="password"
                     placeholder="Password"
-                    className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-violet-500"
+                    className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500"
                     required
                   />
-                  <select
-                    name="role"
-                    className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-violet-500"
-                  >
-                    <option>Patient</option>
-                    <option>Doctor</option>
-                    <option>Admin</option>
-                  </select>
+                  <p className="rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs text-cyan-900">
+                    This form creates patient accounts only.
+                  </p>
 
                   <button
-                    className="h-12 w-full rounded-lg bg-gradient-to-r from-violet-400 to-indigo-400 px-4 py-3 text-lg font-bold text-white shadow-[0_8px_24px_rgba(124,95,255,0.35)] transition hover:brightness-105"
+                    className="h-11 w-full rounded-xl bg-amber-500 px-4 text-sm font-bold text-slate-900 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
                     type="submit"
+                    disabled={loading}
                   >
-                    CREATE ACCOUNT
+                    {loading ? "Creating account..." : "Create account"}
                   </button>
-
-                  {registerMessage && <p className="text-sm font-medium text-emerald-700">{registerMessage}</p>}
                 </form>
               )}
 
-              {error && <p className="mt-4 text-sm font-medium text-red-600">{error}</p>}
+              {loginMessage && <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{loginMessage}</p>}
+              {registerMessage && <p className="rounded-xl bg-teal-50 px-3 py-2 text-sm text-teal-700">{registerMessage}</p>}
+              {error && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
             </div>
           </section>
         </div>

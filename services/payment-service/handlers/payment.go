@@ -1,12 +1,16 @@
 package handlers
 
 import (
+	"bytes"
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +23,7 @@ import (
 	"github.com/stripe/stripe-go/v81"
 	"github.com/stripe/stripe-go/v81/checkout/session"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -124,15 +129,17 @@ func (h *Handler) CreatePayment(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	result, err := h.db.Collection("payments").InsertOne(ctx, payment)
+	_, err = h.db.Collection("payments").InsertOne(ctx, payment)
 	if err != nil {
 		log.Printf("failed to create payment: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create payment"})
 		return
 	}
 
+	// Return the user-facing transaction ID we generated so callers
+	// (appointment-service) can use it to later verify the payment.
 	response := models.PaymentResponse{
-		ID:          fmt.Sprint(result.InsertedID),
+		ID:          transactionID,
 		Status:      string(models.PaymentPending),
 		CheckoutURL: checkoutURL,
 		Amount:      req.Amount,
@@ -208,12 +215,74 @@ func (h *Handler) VerifyPaymentNoWebhook(c *gin.Context) {
 		return
 	}
 
+	// Try to read back the payment record so the frontend can correlate the
+	// Stripe session with our appointment/transaction IDs and act (e.g. auto-confirm).
+	var payment models.Payment
+	if err := h.db.Collection("payments").FindOne(ctx, bson.M{"providerId": stripeSession.ID}).Decode(&payment); err != nil {
+		// If we couldn't find the record, log and still return the session status.
+		log.Printf("failed to load payment after stripe session update: %v", err)
+		c.JSON(http.StatusOK, gin.H{
+			"message":       "payment verification completed",
+			"sessionId":     stripeSession.ID,
+			"paymentStatus": stripeSession.PaymentStatus,
+			"status":        newStatus,
+		})
+		return
+	}
+
+	if newStatus == models.PaymentCompleted {
+		if err := notifyAppointmentPaymentConfirmed(payment.AppointmentID, payment.TransactionID); err != nil {
+			log.Printf("failed to auto-confirm appointment %s after payment completion: %v", payment.AppointmentID, err)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"message":       "payment verification completed",
 		"sessionId":     stripeSession.ID,
 		"paymentStatus": stripeSession.PaymentStatus,
 		"status":        newStatus,
+		"appointmentId": payment.AppointmentID,
+		"transactionId": payment.TransactionID,
 	})
+}
+
+func notifyAppointmentPaymentConfirmed(appointmentID, transactionID string) error {
+	appointmentBase := strings.TrimSpace(os.Getenv("APPOINTMENT_SERVICE_URL"))
+	if appointmentBase == "" {
+		appointmentBase = "http://localhost:8083"
+	}
+
+	internalKey := strings.TrimSpace(os.Getenv("INTERNAL_SERVICE_KEY"))
+	if internalKey == "" {
+		return fmt.Errorf("INTERNAL_SERVICE_KEY is not configured")
+	}
+
+	body, err := json.Marshal(map[string]string{"transactionId": transactionID})
+	if err != nil {
+		return fmt.Errorf("marshal internal confirm payload: %w", err)
+	}
+
+	endpoint := strings.TrimRight(appointmentBase, "/") + "/internal/appointments/" + url.PathEscape(strings.TrimSpace(appointmentID)) + "/confirm-payment"
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewBuffer(body))
+	if err != nil {
+		return fmt.Errorf("create internal confirm request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Internal-Service-Key", internalKey)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("call appointment internal confirm: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("appointment internal confirm returned %d: %s", resp.StatusCode, string(b))
+	}
+
+	return nil
 }
 
 func resolveStripeSecretKey() string {
@@ -268,9 +337,20 @@ func (h *Handler) GetPayment(c *gin.Context) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-
 	var payment models.Payment
-	err := h.db.Collection("payments").FindOne(ctx, bson.M{"transactionId": transactionID}).Decode(&payment)
+
+	// Backwards-compat: older bookings used the Mongo inserted ID (string)
+	// as the returned payment ID. Support lookup by either `transactionId`
+	// (new behaviour) or by the Mongo `_id` so ConfirmPayment works for
+	// payments created before the transactionId change.
+	var filter bson.M
+	if oid, err := primitive.ObjectIDFromHex(transactionID); err == nil {
+		filter = bson.M{"$or": bson.A{bson.M{"transactionId": transactionID}, bson.M{"_id": oid}}}
+	} else {
+		filter = bson.M{"transactionId": transactionID}
+	}
+
+	err := h.db.Collection("payments").FindOne(ctx, filter).Decode(&payment)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			c.JSON(http.StatusNotFound, gin.H{"error": "payment not found"})
