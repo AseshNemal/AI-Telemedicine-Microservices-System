@@ -6,6 +6,7 @@ import (
 	"payment-service/database"
 	"payment-service/handlers"
 	"payment-service/routes"
+	"strings"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -25,6 +26,15 @@ func main() {
 
 	// Connect to database
 	db := database.Connect()
+
+	// M-5: Fail fast if critical env vars are missing.
+	if strings.TrimSpace(os.Getenv("INTERNAL_SERVICE_KEY")) == "" {
+		log.Fatal("[payment-service] INTERNAL_SERVICE_KEY env var is required but not set")
+	}
+	if strings.TrimSpace(os.Getenv("STRIPE_SECRET_KEY")) == "" {
+		log.Fatal("[payment-service] STRIPE_SECRET_KEY env var is required but not set")
+	}
+
 	h := handlers.NewHandler(db)
 
 	// Create router
