@@ -82,6 +82,11 @@ AI Telemedicine Microservices System/
 - `POST /api/auth/register`
 - `GET /api/auth/me`
 - `POST /api/auth/logout`
+- `GET /api/auth/admin/users` (admin)
+- `PATCH /api/auth/admin/users/:uid/role` (admin)
+- `PATCH /api/auth/admin/users/:uid/status` (admin)
+- `GET /api/auth/admin/doctors/pending` (admin)
+- `PATCH /api/auth/admin/doctors/:uid/verification` (admin)
 - `GET /health`
 
 ### Patient Service
@@ -94,6 +99,7 @@ AI Telemedicine Microservices System/
 - `DELETE /api/patients/me/reports/:reportId`
 - `GET /api/patients/me/prescriptions`
 - `GET /api/patients/me/history`
+- `POST /api/patients/history` (doctor/admin)
 - `GET /health`
 
 ### Doctor Service
