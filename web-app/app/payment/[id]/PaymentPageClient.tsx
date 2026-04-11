@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { onAuthStateChanged } from "firebase/auth";
+import { getFirebaseAuth } from "@/app/lib/firebaseClient";
 import {
   createPayment,
   getPayment,
@@ -20,6 +22,7 @@ type PaymentPageClientProps = {
 export default function PaymentPageClient({ paymentId }: PaymentPageClientProps) {
   const searchParams = useSearchParams();
 
+  const [idToken, setIdToken] = useState<string | null>(null);
   const [loadingPayment, setLoadingPayment] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [payment, setPayment] = useState<PaymentRecord | null>(null);
@@ -28,14 +31,31 @@ export default function PaymentPageClient({ paymentId }: PaymentPageClientProps)
 
   const [patientId, setPatientId] = useState("pat-001");
   const [doctorId, setDoctorId] = useState("doc-001");
-  const [amount, setAmount] = useState("150");
+  const [amount, setAmount] = useState("");
   const [currency, setCurrency] = useState("USD");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CARD");
 
   const statusParam = searchParams.get("status");
   const sessionId = searchParams.get("session_id");
 
+  // Firebase auth listener
   useEffect(() => {
+    const auth = getFirebaseAuth();
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const token = await user.getIdToken();
+        setIdToken(token);
+      } else {
+        setIdToken(null);
+        setError("Please sign in to manage your payment.");
+        setLoadingPayment(false);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!idToken) return;
     let mounted = true;
 
     async function loadPayment() {
@@ -43,14 +63,14 @@ export default function PaymentPageClient({ paymentId }: PaymentPageClientProps)
       setError(null);
 
       try {
-        const existing = await getPayment(paymentId);
+        const existing = await getPayment(paymentId, idToken!);
         if (!mounted) return;
 
         if (existing) {
           setPayment(existing);
           setPatientId(existing.patientId || "pat-001");
           setDoctorId(existing.doctorId || "doc-001");
-          setAmount(String(existing.amount || 150));
+          setAmount(String(existing.amount || ""));
           setCurrency((existing.currency || "USD").toUpperCase());
           setPaymentMethod(existing.paymentMethod || "CARD");
         }
@@ -67,9 +87,10 @@ export default function PaymentPageClient({ paymentId }: PaymentPageClientProps)
     return () => {
       mounted = false;
     };
-  }, [paymentId]);
+  }, [paymentId, idToken]);
 
   useEffect(() => {
+    if (!idToken) return;
     let cancelled = false;
 
     async function verifyFromReturnUrl() {
@@ -78,7 +99,7 @@ export default function PaymentPageClient({ paymentId }: PaymentPageClientProps)
       setError(null);
 
       try {
-        const result = await verifyPayment(sessionId);
+        const result = await verifyPayment(sessionId, idToken!);
         if (cancelled) return;
         setStatusMessage(result.message || "Payment verified successfully");
       } catch (err) {
@@ -94,7 +115,7 @@ export default function PaymentPageClient({ paymentId }: PaymentPageClientProps)
     return () => {
       cancelled = true;
     };
-  }, [sessionId, statusParam]);
+  }, [sessionId, statusParam, idToken]);
 
   const tone = useMemo<"neutral" | "success" | "error" | "warning">(() => {
     if (error) return "error";
@@ -105,6 +126,10 @@ export default function PaymentPageClient({ paymentId }: PaymentPageClientProps)
 
   async function onPay(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!idToken) {
+      setError("Please sign in to continue with payment.");
+      return;
+    }
     setProcessing(true);
     setError(null);
     setStatusMessage(null);
@@ -122,10 +147,14 @@ export default function PaymentPageClient({ paymentId }: PaymentPageClientProps)
         amount: amountValue,
         currency,
         paymentMethod,
-      });
+      }, idToken);
 
       if (!created.checkoutUrl) {
         throw new Error("Checkout URL not returned from backend");
+      }
+
+      if (!created.checkoutUrl.startsWith("https://checkout.stripe.com/")) {
+        throw new Error("Invalid checkout URL received");
       }
 
       window.location.href = created.checkoutUrl;

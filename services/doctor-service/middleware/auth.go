@@ -32,7 +32,8 @@ var authHTTPClient = &http.Client{Timeout: 5 * time.Second}
 // Caches successful auth-service verifications for cacheTTL to reduce latency
 // and provide resilience when the auth-service is temporarily unavailable.
 
-const cacheTTL = 60 * time.Second
+// m-6: Reduced from 60s to 10s so revoked tokens/role changes propagate faster.
+const cacheTTL = 10 * time.Second
 
 type cachedIdentity struct {
 	uid    string

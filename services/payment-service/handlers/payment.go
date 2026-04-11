@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"bytes"
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -22,6 +22,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stripe/stripe-go/v81"
 	"github.com/stripe/stripe-go/v81/checkout/session"
+	"github.com/stripe/stripe-go/v81/refund"
+	"github.com/stripe/stripe-go/v81/webhook"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -364,67 +366,118 @@ func (h *Handler) GetPayment(c *gin.Context) {
 	c.JSON(http.StatusOK, payment)
 }
 
-// HandleWebhook processes payment provider webhook
+// HandleWebhook processes Stripe webhook events with signature verification (C-5, C-7).
 func (h *Handler) HandleWebhook(c *gin.Context) {
-	var payload models.WebhookPayload
-
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid webhook payload"})
+	// Read raw body for signature verification — Stripe requires the raw bytes.
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read request body"})
 		return
 	}
 
-	if payload.TransactionID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "transactionId required in webhook"})
+	// Verify Stripe webhook signature (C-5).
+	endpointSecret := strings.TrimSpace(os.Getenv("STRIPE_WEBHOOK_SECRET"))
+	if endpointSecret == "" {
+		log.Println("[payment-service] STRIPE_WEBHOOK_SECRET is not configured — rejecting webhook")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "webhook secret not configured"})
 		return
 	}
 
+	sigHeader := c.GetHeader("Stripe-Signature")
+	event, err := webhook.ConstructEvent(body, sigHeader, endpointSecret)
+	if err != nil {
+		log.Printf("[payment-service] webhook signature verification failed: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid webhook signature"})
+		return
+	}
+
+	// Only handle checkout.session.completed and checkout.session.expired events.
+	switch event.Type {
+	case "checkout.session.completed":
+		var sess stripe.CheckoutSession
+		if err := json.Unmarshal(event.Data.Raw, &sess); err != nil {
+			log.Printf("[payment-service] failed to unmarshal checkout session: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid event data"})
+			return
+		}
+		h.handleCheckoutCompleted(&sess, c)
+	case "checkout.session.expired":
+		var sess stripe.CheckoutSession
+		if err := json.Unmarshal(event.Data.Raw, &sess); err != nil {
+			log.Printf("[payment-service] failed to unmarshal checkout session: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid event data"})
+			return
+		}
+		h.handleCheckoutExpired(&sess, c)
+	default:
+		// Acknowledge other event types without processing.
+		c.JSON(http.StatusOK, gin.H{"message": "event type not handled", "type": event.Type})
+		return
+	}
+}
+
+func (h *Handler) handleCheckoutCompleted(sess *stripe.CheckoutSession, c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Update payment status based on webhook
-	status := models.PaymentFailed
-	completedAt := (*time.Time)(nil)
-
-	if payload.Status == "success" || payload.Status == "completed" {
-		status = models.PaymentCompleted
-		now := time.Now()
-		completedAt = &now
-	} else if payload.Status == "cancelled" {
-		status = models.PaymentCancelled
-	}
-
+	now := time.Now()
 	updateData := bson.M{
-		"status":           status,
-		"updatedAt":        time.Now(),
-		"providerResponse": payload.Data,
-	}
-
-	if completedAt != nil {
-		updateData["completedAt"] = completedAt
+		"status":      models.PaymentCompleted,
+		"updatedAt":   now,
+		"completedAt": &now,
+		"providerResponse": bson.M{
+			"provider":      "stripe",
+			"sessionId":     sess.ID,
+			"paymentStatus": sess.PaymentStatus,
+			"sessionStatus": sess.Status,
+		},
 	}
 
 	result, err := h.db.Collection("payments").UpdateOne(
 		ctx,
-		bson.M{"transactionId": payload.TransactionID},
+		bson.M{"providerId": sess.ID, "status": models.PaymentPending},
 		bson.M{"$set": updateData},
 	)
-
 	if err != nil {
-		log.Printf("failed to update payment: %v", err)
+		log.Printf("[payment-service] failed to update payment from webhook: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process webhook"})
 		return
 	}
 
 	if result.MatchedCount == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "payment not found"})
+		// Idempotent: already processed or unknown session.
+		c.JSON(http.StatusOK, gin.H{"message": "already processed or not found"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":       "webhook processed successfully",
-		"transactionId": payload.TransactionID,
-		"status":        status,
-	})
+	// Auto-confirm the appointment (C-7).
+	var payment models.Payment
+	if err := h.db.Collection("payments").FindOne(ctx, bson.M{"providerId": sess.ID}).Decode(&payment); err == nil {
+		if cErr := notifyAppointmentPaymentConfirmed(payment.AppointmentID, payment.TransactionID); cErr != nil {
+			log.Printf("[payment-service] failed to auto-confirm appointment %s: %v", payment.AppointmentID, cErr)
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "payment completed via webhook"})
+}
+
+func (h *Handler) handleCheckoutExpired(sess *stripe.CheckoutSession, c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := h.db.Collection("payments").UpdateOne(
+		ctx,
+		bson.M{"providerId": sess.ID, "status": models.PaymentPending},
+		bson.M{"$set": bson.M{
+			"status":    models.PaymentFailed,
+			"updatedAt": time.Now(),
+		}},
+	)
+	if err != nil {
+		log.Printf("[payment-service] failed to expire payment from webhook: %v", err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "session expiry processed"})
 }
 
 // GetPaymentsByPatient retrieves all payments for a patient
@@ -494,6 +547,102 @@ func (h *Handler) CancelPayment(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":       "payment cancelled successfully",
+		"transactionId": transactionID,
+	})
+}
+
+// RefundPayment issues a Stripe refund for a completed payment (C-1).
+// POST /payments/:transactionId/refund
+func (h *Handler) RefundPayment(c *gin.Context) {
+	transactionID := c.Param("transactionId")
+	if transactionID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "transaction ID required"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var payment models.Payment
+	err := h.db.Collection("payments").FindOne(ctx, bson.M{"transactionId": transactionID}).Decode(&payment)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			c.JSON(http.StatusNotFound, gin.H{"error": "payment not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve payment"})
+		return
+	}
+
+	if payment.Status == models.PaymentRefunded {
+		// Idempotent: already refunded.
+		c.JSON(http.StatusOK, gin.H{"message": "payment already refunded", "transactionId": transactionID})
+		return
+	}
+
+	if payment.Status != models.PaymentCompleted {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("cannot refund payment with status %s; must be COMPLETED", payment.Status)})
+		return
+	}
+
+	// Issue refund via Stripe using the checkout session's payment_intent.
+	stripeSecret := resolveStripeSecretKey()
+	if stripeSecret == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "STRIPE_SECRET_KEY is not configured"})
+		return
+	}
+	stripe.Key = stripeSecret
+
+	// Retrieve the checkout session to get the PaymentIntent ID.
+	if payment.ProviderID == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "no Stripe session ID found on payment record"})
+		return
+	}
+
+	sess, err := session.Get(payment.ProviderID, nil)
+	if err != nil {
+		log.Printf("[payment-service] failed to retrieve stripe session %s for refund: %v", payment.ProviderID, err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to retrieve Stripe session for refund"})
+		return
+	}
+
+	if sess.PaymentIntent == nil || sess.PaymentIntent.ID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "no payment intent associated with this session; cannot refund"})
+		return
+	}
+
+	refundParams := &stripe.RefundParams{
+		PaymentIntent: stripe.String(sess.PaymentIntent.ID),
+	}
+	// Idempotency key to prevent duplicate refunds.
+	refundParams.IdempotencyKey = stripe.String("refund-" + transactionID)
+
+	_, err = refund.New(refundParams)
+	if err != nil {
+		log.Printf("[payment-service] Stripe refund failed for txn %s: %v", transactionID, err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Stripe refund failed"})
+		return
+	}
+
+	// Mark payment as REFUNDED in the database.
+	refundCtx, refundCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer refundCancel()
+
+	_, err = h.db.Collection("payments").UpdateOne(
+		refundCtx,
+		bson.M{"transactionId": transactionID, "status": models.PaymentCompleted},
+		bson.M{"$set": bson.M{
+			"status":    models.PaymentRefunded,
+			"updatedAt": time.Now(),
+		}},
+	)
+	if err != nil {
+		log.Printf("[payment-service] failed to mark payment %s as REFUNDED in DB: %v", transactionID, err)
+		// Refund already issued to Stripe — log but don't fail the response.
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":       "payment refunded successfully",
 		"transactionId": transactionID,
 	})
 }

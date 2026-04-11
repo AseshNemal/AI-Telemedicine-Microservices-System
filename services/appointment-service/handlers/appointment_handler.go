@@ -298,6 +298,17 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 			req.DoctorName = req.DoctorID
 		}
 		doctorFeeCents = doctorInfo.ConsultationFeeCents
+
+		// C-8: Validate submitted specialty matches the doctor's actual specialty.
+		if !strings.EqualFold(strings.TrimSpace(req.Specialty), strings.TrimSpace(doctorInfo.Specialty)) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("specialty mismatch: you requested %q but Dr. %s is a %s specialist",
+					req.Specialty, doctorInfo.Name, doctorInfo.Specialty),
+			})
+			return
+		}
+		// Use the doctor's canonical specialty to avoid casing inconsistencies.
+		req.Specialty = doctorInfo.Specialty
 	}
 
 	// Generate the appointment ID.
@@ -305,24 +316,10 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 
 	// Step 5 – check DB connectivity and enforce per-patient rate limit to
 	// prevent slot-exhaustion attacks (issue #16).
+	// M-1 FIX: Use a MongoDB transaction to atomically check the pending count
+	// and insert the new appointment, preventing TOCTOU race conditions.
 	if !dbReady(h.db) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
-		return
-	}
-
-	pendingCtx, pendingCancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer pendingCancel()
-	pendingCount, countErr := h.db.DB.Collection("appointments").CountDocuments(pendingCtx, bson.M{
-		"patientId": patientID,
-		"status":    models.StatusPendingPayment,
-	})
-	if countErr != nil {
-		log.Printf("[appointment-service] failed to count pending bookings for patient %s: %v", patientID, countErr)
-		// Non-fatal: proceed; the unique index remains the last line of defence.
-	} else if pendingCount >= maxPendingBookings {
-		c.JSON(http.StatusTooManyRequests, gin.H{
-			"error": fmt.Sprintf("you have %d incomplete bookings awaiting payment; complete or cancel them before booking again", maxPendingBookings),
-		})
 		return
 	}
 
@@ -352,11 +349,48 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 		"updatedAt":     req.UpdatedAt,
 	}
 
-	insertCtx, insertCancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer insertCancel()
+	// Atomic insert with pending-count guard inside a MongoDB session (M-1 fix).
+	txCtx, txCancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer txCancel()
 
-	if _, err := h.db.DB.Collection("appointments").InsertOne(insertCtx, doc); err != nil {
-		// E11000 duplicate key → doctor slot already taken (race-condition safe).
+	session, sessionErr := h.db.MongoClient.StartSession()
+	if sessionErr != nil {
+		log.Printf("[appointment-service] failed to start mongo session: %v", sessionErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal error"})
+		return
+	}
+	defer session.EndSession(txCtx)
+
+	var insertErr error
+	var pendingLimitHit bool
+	_, txErr := session.WithTransaction(txCtx, func(sCtx mongo.SessionContext) (interface{}, error) {
+		pendingLimitHit = false
+		pendingCount, countErr := h.db.DB.Collection("appointments").CountDocuments(sCtx, bson.M{
+			"patientId": patientID,
+			"status":    models.StatusPendingPayment,
+		})
+		if countErr != nil {
+			return nil, countErr
+		}
+		if pendingCount >= maxPendingBookings {
+			pendingLimitHit = true
+			return nil, fmt.Errorf("pending limit exceeded")
+		}
+		_, insertErr = h.db.DB.Collection("appointments").InsertOne(sCtx, doc)
+		return nil, insertErr
+	})
+
+	if pendingLimitHit {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error": fmt.Sprintf("you have %d incomplete bookings awaiting payment; complete or cancel them before booking again", maxPendingBookings),
+		})
+		return
+	}
+	if txErr != nil || insertErr != nil {
+		err := txErr
+		if err == nil {
+			err = insertErr
+		}
 		if mongo.IsDuplicateKeyError(err) {
 			c.JSON(http.StatusConflict, gin.H{"error": "this doctor slot is already booked"})
 			return
@@ -537,7 +571,9 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 //
 // POST /internal/appointments/:id/confirm-payment
 // Headers:
-//   X-Internal-Service-Key: <INTERNAL_SERVICE_KEY>
+//
+//	X-Internal-Service-Key: <INTERNAL_SERVICE_KEY>
+//
 // Body (optional): {"transactionId":"..."}
 func (h *Handler) ConfirmPaymentInternal(c *gin.Context) {
 	configuredKey := strings.TrimSpace(os.Getenv("INTERNAL_SERVICE_KEY"))
@@ -822,16 +858,21 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "you are not the doctor for this appointment"})
 			return
 		}
-		if newStatus != models.StatusBooked && newStatus != models.StatusRejected && newStatus != models.StatusCompleted {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "doctors may only accept (BOOKED), reject (REJECTED), or complete (COMPLETED) appointments"})
+
+		// C-3/M-6: Verify doctor is VERIFIED before allowing any status change.
+		doctorInfo, doctorErr := h.doctorSvc.GetDoctorByID(appt.DoctorID)
+		if doctorErr != nil {
+			log.Printf("[appointment-service] doctor verification check failed for %s: %v", uid, doctorErr)
+			c.JSON(http.StatusBadGateway, gin.H{"error": "could not verify doctor status"})
 			return
 		}
-		if newStatus == models.StatusRejected && req.Reason == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "a reason is required when rejecting an appointment"})
+		if doctorInfo.VerificationStatus != "VERIFIED" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "your doctor account is not verified; you cannot manage appointments"})
 			return
 		}
-		if newStatus == models.StatusCompleted && !appt.IsStarted() {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "cannot mark an appointment as COMPLETED before its scheduled time"})
+
+		if newStatus != models.StatusBooked && newStatus != models.StatusRejected {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "doctors may only accept (BOOKED) or reject (REJECTED) appointments through this endpoint"})
 			return
 		}
 		// Note: state machine enforces that only CONFIRMED → BOOKED/REJECTED is valid.
@@ -1268,4 +1309,116 @@ func (h *Handler) Health(c *gin.Context) {
 		"service": "appointment-service",
 		"status":  "OK",
 	})
+}
+
+// CompleteAppointmentInternal is an internal service-to-service endpoint called by
+// doctor-service after EndConsultation completes a consultation (C-6).
+//
+// POST /internal/appointments/:id/complete
+// Headers: X-Internal-Service-Key: <INTERNAL_SERVICE_KEY>
+func (h *Handler) CompleteAppointmentInternal(c *gin.Context) {
+	configuredKey := strings.TrimSpace(os.Getenv("INTERNAL_SERVICE_KEY"))
+	providedKey := strings.TrimSpace(c.GetHeader("X-Internal-Service-Key"))
+	if configuredKey == "" || providedKey == "" || providedKey != configuredKey {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized internal request"})
+		return
+	}
+
+	id := c.Param("id")
+	if !validateID(c, id) {
+		return
+	}
+
+	appt, ok := h.fetchAppointment(c, id)
+	if !ok {
+		return
+	}
+
+	if appt.Status != models.StatusBooked {
+		if appt.Status == models.StatusCompleted {
+			c.JSON(http.StatusOK, gin.H{"message": "appointment already completed", "status": appt.Status})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("cannot complete appointment with status %s; must be BOOKED", appt.Status),
+		})
+		return
+	}
+
+	updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer updateCancel()
+
+	res, err := h.db.DB.Collection("appointments").UpdateOne(
+		updateCtx,
+		bson.M{"id": id, "status": models.StatusBooked},
+		bson.M{"$set": bson.M{
+			"status":    models.StatusCompleted,
+			"updatedAt": time.Now().UTC(),
+		}},
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to complete appointment"})
+		return
+	}
+	if res.MatchedCount == 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "appointment status changed concurrently"})
+		return
+	}
+
+	go h.notifSvc.SendStatusUpdate(appt.ID, appt.PatientEmail, doctorDisplayName(appt), appt.Date, appt.Time, models.StatusCompleted, "")
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "appointment completed via consultation workflow",
+		"id":      id,
+		"status":  models.StatusCompleted,
+	})
+}
+
+// CheckSlotInternal is an internal endpoint used by doctor-service CheckAvailability
+// to verify whether a slot is already booked (M-2).
+//
+// GET /internal/appointments/check-slot?doctorId=...&date=...&time=...
+func (h *Handler) CheckSlotInternal(c *gin.Context) {
+	configuredKey := strings.TrimSpace(os.Getenv("INTERNAL_SERVICE_KEY"))
+	providedKey := strings.TrimSpace(c.GetHeader("X-Internal-Service-Key"))
+	if configuredKey == "" || providedKey == "" || providedKey != configuredKey {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized internal request"})
+		return
+	}
+
+	doctorID := c.Query("doctorId")
+	date := c.Query("date")
+	timeSlot := c.Query("time")
+
+	if doctorID == "" || date == "" || timeSlot == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "doctorId, date, and time are required"})
+		return
+	}
+
+	if !dbReady(h.db) {
+		// Cannot verify — return not-booked so the caller allows the attempt
+		// (the unique index catches it at insert).
+		c.JSON(http.StatusOK, gin.H{"booked": false})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// Check for any active appointment (not CANCELLED/REJECTED) at this slot.
+	count, err := h.db.DB.Collection("appointments").CountDocuments(ctx, bson.M{
+		"doctorId": doctorID,
+		"date":     date,
+		"time":     timeSlot,
+		"status": bson.M{"$nin": []string{
+			models.StatusCancelled,
+			models.StatusRejected,
+		}},
+	})
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"booked": false})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"booked": count > 0})
 }

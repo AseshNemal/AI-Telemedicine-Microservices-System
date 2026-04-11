@@ -1,17 +1,13 @@
 package handlers
 
 import (
-	"bytes"
 	"context"
-	"crypto/rand"
 	"doctor-service/database"
 	"doctor-service/middleware"
 	"doctor-service/models"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	neturl "net/url"
@@ -31,6 +27,13 @@ import (
 // timeSlotRegexp matches HH:MM.
 var timeSlotRegexp = regexp.MustCompile(`^\d{2}:\d{2}$`)
 
+// validHHMM checks that "HH:MM" has hour 0-23 and minute 0-59.
+func validHHMM(s string) bool {
+	h, err1 := strconv.Atoi(s[:2])
+	m, err2 := strconv.Atoi(s[3:5])
+	return err1 == nil && err2 == nil && h >= 0 && h <= 23 && m >= 0 && m <= 59
+}
+
 // Handler holds shared dependencies for all HTTP handlers.
 type Handler struct {
 	db *database.Client
@@ -41,13 +44,13 @@ func NewHandler(db *database.Client) *Handler {
 	return &Handler{db: db}
 }
 
-func (h *Handler) GetDoctors(c *gin.Context) {
-	specialty := c.Query("specialty")
-	// Allow browser requests from local frontend during development
-	c.Header("Access-Control-Allow-Origin", "http://localhost:3000")
-	c.Header("Access-Control-Allow-Credentials", "true")
-	// Require database; no in-memory fallback
-	if h.db == nil || !h.db.Connected || h.db.DB == nil {
+func (h *Handler) GetDoctorByID(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" || len(id) > 128 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid doctor id"})
+		return
+	}
+	if !dbReady(h.db) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
 		return
 	}
@@ -225,6 +228,11 @@ func (h *Handler) SetAvailability(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "start_time and end_time must be HH:MM"})
 			return
 		}
+		// m-1: Validate actual hour/minute ranges (regex only checks format).
+		if !validHHMM(s.StartTime) || !validHHMM(s.EndTime) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "hours must be 00–23 and minutes 00–59"})
+			return
+		}
 		if s.StartTime >= s.EndTime {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "start_time must be before end_time"})
 			return
@@ -286,7 +294,14 @@ func (h *Handler) AdminListDoctors(c *gin.Context) {
 
 	filter := bson.M{}
 	if vs := c.Query("verification_status"); vs != "" {
-		filter["verification_status"] = vs
+		// m-3: Only accept known verification_status values so typos don't silently return empty results.
+		switch models.VerificationStatus(vs) {
+		case models.StatusPending, models.StatusVerified, models.StatusSuspended:
+			filter["verification_status"] = vs
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid verification_status; allowed: PENDING, VERIFIED, SUSPENDED"})
+			return
+		}
 	}
 
 	page, limit := 1, 50
@@ -345,27 +360,14 @@ func (h *Handler) adminSetStatus(c *gin.Context, status models.VerificationStatu
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Fetch current state to enforce state guards.
-	var current models.Doctor
-	if err := h.db.DB.Collection("doctors").FindOne(ctx, bson.M{"id": id}).Decode(&current); err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "doctor not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch doctor"})
-		return
-	}
-	if current.VerificationStatus == status {
-		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("doctor is already %s", status)})
-		return
-	}
-
+	// m-2: Single atomic FindOneAndUpdate with a filter that rejects the no-op case,
+	// eliminating the read-then-write TOCTOU race.
 	after := options.After
 	opts := options.FindOneAndUpdate().SetReturnDocument(after)
 
 	var updated models.Doctor
 	err := h.db.DB.Collection("doctors").FindOneAndUpdate(ctx,
-		bson.M{"id": id},
+		bson.M{"id": id, "verification_status": bson.M{"$ne": status}},
 		bson.M{"$set": bson.M{
 			"verification_status": status,
 			"updated_at":          time.Now().UTC(),
@@ -373,7 +375,14 @@ func (h *Handler) adminSetStatus(c *gin.Context, status models.VerificationStatu
 		opts,
 	).Decode(&updated)
 	if errors.Is(err, mongo.ErrNoDocuments) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "doctor not found"})
+		// Either the doctor doesn't exist or already has the requested status.
+		// Distinguish by a plain find.
+		var probe models.Doctor
+		if probeErr := h.db.DB.Collection("doctors").FindOne(ctx, bson.M{"id": id}).Decode(&probe); probeErr != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "doctor not found"})
+			return
+		}
+		c.JSON(http.StatusConflict, gin.H{"error": fmt.Sprintf("doctor is already %s", status)})
 		return
 	}
 	if err != nil {
@@ -468,7 +477,7 @@ func (h *Handler) acceptOrReject(c *gin.Context, newStatus string) {
 	}
 
 	var req models.AcceptRejectRequest
-	_ = c.ShouldBindJSON(&req) // reason is optional
+	_ = c.ShouldBindJSON(&req)
 
 	firebaseUID := callerUID(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -741,17 +750,26 @@ func (h *Handler) GetPrescriptionShared(c *gin.Context) {
 		return
 	}
 
-	// Verify the caller is either the doctor or the patient of this consultation.
+	// Verify the caller is the doctor, the patient, or an admin for this consultation.
 	uid := callerUID(c)
 	role, _ := c.Get(middleware.CtxRole)
 	callerRoleStr := fmt.Sprint(role)
 
-	if callerRoleStr == "DOCTOR" && consultation.DoctorID != uid {
-		c.JSON(http.StatusForbidden, gin.H{"error": "you are not the doctor for this consultation"})
-		return
-	}
-	if callerRoleStr == "PATIENT" && consultation.PatientID != uid {
-		c.JSON(http.StatusForbidden, gin.H{"error": "you are not the patient for this consultation"})
+	switch callerRoleStr {
+	case "ADMIN":
+		// m-4: Admins may view any prescription — no ownership check required.
+	case "DOCTOR":
+		if consultation.DoctorID != uid {
+			c.JSON(http.StatusForbidden, gin.H{"error": "you are not the doctor for this consultation"})
+			return
+		}
+	case "PATIENT":
+		if consultation.PatientID != uid {
+			c.JSON(http.StatusForbidden, gin.H{"error": "you are not the patient for this consultation"})
+			return
+		}
+	default:
+		c.JSON(http.StatusForbidden, gin.H{"error": "unknown role"})
 		return
 	}
 
@@ -1076,26 +1094,49 @@ func (h *Handler) EndConsultation(c *gin.Context) {
 		return
 	}
 
-	// Best-effort: mark appointment COMPLETED in Appointment Service
+	// Mark appointment COMPLETED via internal endpoint (C-6, M-4).
+	// Uses INTERNAL_SERVICE_KEY instead of user's JWT to call the dedicated internal endpoint.
 	apptURL := svcURL("APPOINTMENT_SERVICE_URL", "http://appointment-service:8081")
-	authHeader := c.GetHeader("Authorization")
-	pStatus, _, pErr := outboundJSON(c.Request.Context(), http.MethodPut,
-		fmt.Sprintf("%s/appointments/%s/status", apptURL, appointmentID),
-		map[string]interface{}{"status": "COMPLETED"},
-		map[string]string{"Authorization": authHeader})
-	if pErr != nil {
-		log.Printf("[doctor-service] failed to update appointment status to COMPLETED: %v", pErr)
-	} else if pStatus >= 300 {
-		log.Printf("[doctor-service] appointment status update returned %d", pStatus)
+	internalKey := strings.TrimSpace(os.Getenv("INTERNAL_SERVICE_KEY"))
+
+	var pStatus int
+	var pErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			// Brief pause between retries.
+			t := time.NewTimer(time.Duration(50*(attempt)) * time.Millisecond)
+			select {
+			case <-t.C:
+			case <-c.Request.Context().Done():
+				t.Stop()
+				return
+			}
+		}
+		pStatus, _, pErr = outboundJSON(c.Request.Context(), http.MethodPost,
+			fmt.Sprintf("%s/internal/appointments/%s/complete", apptURL, appointmentID),
+			nil, map[string]string{"X-Internal-Service-Key": internalKey})
+		if pErr == nil && pStatus < 500 {
+			break
+		}
+	}
+	if pErr != nil || pStatus >= 300 {
+		log.Printf("[doctor-service] failed to mark appointment %s COMPLETED (status=%d, err=%v)", appointmentID, pStatus, pErr)
+		// Consultation is already completed in our DB — log and inform the caller.
+		c.JSON(http.StatusOK, gin.H{
+			"message":                  "consultation ended but appointment status update failed; it will be reconciled",
+			"consultation_id":          updated.ID,
+			"appointment_status_error": true,
+		})
+		return
 	}
 
-	fireNotification(map[string]interface{}{
-		"type":           "CONSULTATION_COMPLETED",
-		"appointment_id": appointmentID,
-		"patient_id":     updated.PatientID,
+	c.JSON(http.StatusOK, gin.H{
+		"message":         "consultation ended successfully",
+		"consultation_id": updated.ID,
+		"notes":           updated.Notes,
+		"prescription":    updated.Prescription,
+		"medications":     updated.Medications,
 	})
-
-	c.JSON(http.StatusOK, updated)
 }
 
 // ── POST /check-availability — internal endpoint for Appointment Service ──────
@@ -1106,12 +1147,12 @@ func (h *Handler) CheckAvailability(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, models.AvailabilityResponse{Available: false})
 		return
 	}
-	if req.DoctorID == "" || len(req.DoctorID) > 128 {
+	if req.DoctorID == "" || req.Date == "" || req.Time == "" {
 		c.JSON(http.StatusBadRequest, models.AvailabilityResponse{Available: false})
 		return
 	}
 	if !dbReady(h.db) {
-		c.JSON(http.StatusOK, models.AvailabilityResponse{Available: false})
+		c.JSON(http.StatusInternalServerError, models.AvailabilityResponse{Available: false})
 		return
 	}
 
@@ -1149,6 +1190,32 @@ func (h *Handler) CheckAvailability(c *gin.Context) {
 		return
 	}
 
-	available := req.Time >= slot.StartTime && req.Time < slot.EndTime
-	c.JSON(http.StatusOK, models.AvailabilityResponse{Available: available})
+	if req.Time < slot.StartTime || req.Time >= slot.EndTime {
+		c.JSON(http.StatusOK, models.AvailabilityResponse{Available: false})
+		return
+	}
+
+	// M-2: Check existing bookings at this slot via appointment-service internal endpoint.
+	internalKey := strings.TrimSpace(os.Getenv("INTERNAL_SERVICE_KEY"))
+	apptURL := svcURL("APPOINTMENT_SERVICE_URL", "http://appointment-service:8081")
+	checkURL := fmt.Sprintf("%s/internal/appointments/check-slot?doctorId=%s&date=%s&time=%s",
+		apptURL,
+		neturl.QueryEscape(req.DoctorID),
+		neturl.QueryEscape(req.Date),
+		neturl.QueryEscape(req.Time))
+	slotStatus, slotBody, slotErr := outboundJSON(c.Request.Context(), http.MethodGet,
+		checkURL, nil, map[string]string{"X-Internal-Service-Key": internalKey})
+	if slotErr == nil && slotStatus == http.StatusOK {
+		var slotResp struct {
+			Booked bool `json:"booked"`
+		}
+		if json.Unmarshal(slotBody, &slotResp) == nil && slotResp.Booked {
+			c.JSON(http.StatusOK, models.AvailabilityResponse{Available: false})
+			return
+		}
+	}
+	// If the check fails (service unavailable), fall through to available=true
+	// and let the unique index catch conflicts at booking time.
+
+	c.JSON(http.StatusOK, models.AvailabilityResponse{Available: true})
 }

@@ -27,6 +27,17 @@ export default function AppointmentBooking() {
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
 
+  // Platform fee is $20 (2000 cents). Doctor fee comes from API.
+  const PLATFORM_FEE_CENTS = 2000;
+  const doctorFeeCents = selectedDoctor?.consultation_fee_cents ?? 0;
+  const totalCents = doctorFeeCents + PLATFORM_FEE_CENTS;
+
+  // Date constraints: earliest is today, latest is 5 months from now.
+  const todayStr = new Date().toISOString().split("T")[0];
+  const maxDate = new Date();
+  maxDate.setMonth(maxDate.getMonth() + 5);
+  const maxDateStr = maxDate.toISOString().split("T")[0];
+
   // Load doctors
   async function loadDoctors(filter?: string) {
     setLoading(true);
@@ -86,7 +97,7 @@ export default function AppointmentBooking() {
         time,
       }, idToken);
       setMessage(`✓ Appointment booked successfully (ID: ${appointment.id})`);
-      if (appointment.checkoutUrl) {
+      if (appointment.checkoutUrl && appointment.checkoutUrl.startsWith("https://checkout.stripe.com/")) {
         setLatestCheckoutUrl(appointment.checkoutUrl);
       }
       if (appointment.appointment && appointment.appointment.id) {
@@ -187,6 +198,11 @@ export default function AppointmentBooking() {
                 <p className="text-xs uppercase tracking-[0.16em] text-slate-500">{doctor.specialty}</p>
                 <h3 className="mt-1 text-lg font-semibold text-slate-900">{doctor.name}</h3>
                 <p className="mt-1 text-sm text-slate-600">{doctor.hospital}</p>
+                {typeof doctor.consultation_fee_cents === "number" && (
+                  <p className="mt-1 text-sm font-medium text-blue-700">
+                    Consultation fee: ${(doctor.consultation_fee_cents / 100).toFixed(2)}
+                  </p>
+                )}
                 {doctor.availability && doctor.availability.length > 0 && (
                   <p className="mt-2 text-xs text-slate-500">
                     Available: {doctor.availability.slice(0, 3).join(", ")}
@@ -207,6 +223,14 @@ export default function AppointmentBooking() {
             <p className="section-kicker">Selected doctor</p>
             <h3 className="mt-1 text-lg font-semibold text-slate-900">{selectedDoctor.name}</h3>
             <p className="mt-1 text-sm text-slate-600">{selectedDoctor.specialty} • {selectedDoctor.hospital}</p>
+            {totalCents > 0 && (
+              <div className="mt-2 rounded-lg bg-blue-50 p-3 text-sm">
+                <p className="font-medium text-slate-800">Cost breakdown</p>
+                <p className="text-slate-600">Doctor fee: ${(doctorFeeCents / 100).toFixed(2)}</p>
+                <p className="text-slate-600">Platform fee: ${(PLATFORM_FEE_CENTS / 100).toFixed(2)}</p>
+                <p className="mt-1 font-semibold text-slate-900">Total: ${(totalCents / 100).toFixed(2)}</p>
+              </div>
+            )}
             <button
               className="btn-secondary mt-3"
               onClick={() => {
@@ -245,6 +269,8 @@ export default function AppointmentBooking() {
                 className="field-input"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
+                min={todayStr}
+                max={maxDateStr}
                 required
               />
               <input
@@ -252,6 +278,7 @@ export default function AppointmentBooking() {
                 className="field-input"
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
+                step="900"
                 required
               />
               <div></div>

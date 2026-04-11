@@ -32,6 +32,12 @@ func RegisterRoutes(router *gin.Engine, h *handlers.Handler) {
 	// verification. Guarded by INTERNAL_SERVICE_KEY in handler.
 	router.POST("/internal/appointments/:id/confirm-payment", h.ConfirmPaymentInternal)
 
+	// Internal endpoint used by doctor-service EndConsultation to mark BOOKED → COMPLETED (C-6).
+	router.POST("/internal/appointments/:id/complete", h.CompleteAppointmentInternal)
+
+	// Internal endpoint used by doctor-service CheckAvailability to verify slot bookings (M-2).
+	router.GET("/internal/appointments/check-slot", h.CheckSlotInternal)
+
 	// ── Authenticated ─────────────────────────────────────────────────────────
 	auth := router.Group("/")
 	auth.Use(middleware.VerifyToken())
