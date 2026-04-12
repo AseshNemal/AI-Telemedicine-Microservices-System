@@ -4,13 +4,13 @@ Cloud-native distributed microservices starter for telemedicine use cases (patie
 - Node.js + Express + MongoDB (MERN-style services): `auth-service-node`, `patient-service-node`
 - Go + Gin services: `doctor-service`, `appointment-service`, `notification-service`, `payment-service`, `AI-symptom-service`
 
-Also includes Docker, Docker Compose, Kubernetes manifests, and a Next.js frontend.
+Also includes Docker, Kubernetes manifests, and a Next.js frontend.
 
 ## Prerequisites
 
 Install the following before running:
 
-- Docker Desktop (with Docker Compose v2)
+- Docker Desktop (with Kubernetes enabled)
 - Git
 - Node.js 22+ (only needed if running frontend without Docker)
 - Go 1.25+ (only needed if running services without Docker)
@@ -22,6 +22,56 @@ Install the following before running:
 3. Do NOT commit real credentials into the repository. Keep secret files locally and under `.gitignore`.
 4. Place Firebase service account JSON and any other provider private files in a local `secrets/` folder that is gitignored (see `.gitignore`).
 5. (Optional) Use `.env.example` as a reference template.
+
+## 🚀 One-Command Run (Kubernetes)
+
+From the project root, run:
+
+```bash
+chmod +x k8s-up.sh
+./k8s-up.sh --port-forward --port 8080
+```
+
+What this single command does:
+
+- Builds Docker images
+- Applies Kubernetes manifests and secrets setup flow
+- Waits for rollouts and runs health checks
+- Starts port-forwarding for gateway + web-app + core services
+
+Open after it starts:
+
+- Frontend: `http://localhost:3000`
+- API Gateway: `http://localhost:8080`
+- Gateway health: `http://localhost:8080/health`
+
+Fast rerun (skip image build):
+
+```bash
+./k8s-up.sh --skip-build --port-forward --port 8080
+```
+
+OS notes (same workflow, different shell launcher):
+
+- macOS / Linux (zsh/bash):
+
+```bash
+chmod +x k8s-up.sh
+./k8s-up.sh --port-forward --port 8080
+```
+
+- Windows (Git Bash or WSL):
+
+```bash
+chmod +x k8s-up.sh
+./k8s-up.sh --port-forward --port 8080
+```
+
+- Windows (PowerShell):
+
+```powershell
+bash ./k8s-up.sh --port-forward --port 8080
+```
 
 ## Architecture Overview
 
@@ -199,53 +249,128 @@ git push --force --tags
 
 If you'd like, I can prepare a small helper script that creates the Kubernetes secret from a local env file without adding secrets to the repo.
 
-## Local Run (Docker Compose) - macOS / Linux (zsh/bash)
+## Primary Run Method: Kubernetes (recommended)
 
-Run from the `deployments/` directory:
+This project is intended to run primarily on Kubernetes.
 
-1. Start all services (with API Gateway):
-	 - `cd deployments`
-	 - `docker compose up --build`
-2. **All services accessible via API Gateway:**
-	 - Gateway: `http://localhost`
-	 - Auth Service: `http://localhost/api/auth`
-	 - Patient Service: `http://localhost/api/patients`
-	 - Doctor Service: `http://localhost/doctors`
-	 - Appointment Service: `http://localhost/appointments`
-	 - Payment Service: `http://localhost/payments`
-	 - AI Symptom Service (direct): `http://localhost:8091`
-	 - Notifications: `http://localhost/send-email`, `/send-sms`
-	 - Frontend: `http://localhost:3000`
-	 - Frontend symptom proxy: `http://localhost:3000/api/symptoms/chat`
-	 - Swagger Docs: `http://localhost/api-docs`
-3. Stop services:
-	 - `Ctrl + C`
-	 - `docker compose down`
+### 1) Preflight
 
-## Local Run (Docker Compose) - Windows (PowerShell)
+```bash
+# verify cluster access
+kubectl config current-context
+kubectl get nodes
+```
 
-Run from the `deployments` folder:
+### 2) Build images (local cluster workflow)
 
-1. Start all services (with API Gateway):
-	 - `Set-Location .\deployments`
-	 - `docker compose up --build`
-2. **All services accessible via API Gateway:**
-	 - Gateway: `http://localhost`
-	 - Auth Service: `http://localhost/api/auth`
-	 - Patient Service: `http://localhost/api/patients`
-	 - Doctor Service: `http://localhost/doctors`
-	 - Appointment Service: `http://localhost/appointments`
-	 - Payment Service: `http://localhost/payments`
-	 - AI Symptom Service (direct): `http://localhost:8091`
-	 - Notifications: `http://localhost/send-email`, `/send-sms`
-	 - Frontend: `http://localhost:3000`
-	 - Frontend symptom proxy: `http://localhost:3000/api/symptoms/chat`
-	 - Swagger Docs: `http://localhost/api-docs`
-3. Stop services:
-	 - `Ctrl + C`
-	 - `docker compose down`
+Build all required images from the repo root (or run your existing build helper scripts):
 
-## Health Check (All Platforms)
+```bash
+docker build -t auth-service:latest -f services/auth-service-node/Dockerfile services/auth-service-node
+docker build -t patient-service:latest -f services/patient-service-node/Dockerfile services/patient-service-node
+docker build -t doctor-service:latest -f services/doctor-service/Dockerfile services/doctor-service
+docker build -t appointment-service:latest -f services/appointment-service/Dockerfile services/appointment-service
+docker build -t notification-service:latest -f services/notification-service/Dockerfile services/notification-service
+docker build -t payment-service:latest -f services/payment-service/Dockerfile services/payment-service
+docker build -t symptom-service:latest -f services/AI-symptom-service/Dockerfile services/AI-symptom-service
+docker build -t telemedicine-service:latest -f services/telemedicine-service/Dockerfile services/telemedicine-service
+docker build -t web-app:latest -f web-app/Dockerfile web-app
+docker build -t api-gateway-nginx:latest -f api-gateway-nginx/Dockerfile api-gateway-nginx
+```
+
+> If your cluster cannot access local images, push to a registry and update image names in manifests.
+
+### 3) Create/update secrets (do not commit real values)
+
+Use your local secret source and create the Kubernetes secret in `default` namespace:
+
+```bash
+# option A: from local env file
+kubectl create secret generic telemedicine-secrets \
+  --from-env-file=./deployments/kubernetes/secret.example.env \
+  -n default \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# option B: from local YAML file outside git
+# kubectl create secret generic telemedicine-secrets \
+#   --from-file=secret.yaml=./path/to/local/secret.yaml \
+#   -n default \
+#   --dry-run=client -o yaml | kubectl apply -f -
+```
+
+### 4) Apply Kubernetes manifests
+
+```bash
+kubectl apply -f deployments/kubernetes/configmap.yaml
+kubectl apply -f deployments/kubernetes/auth-deployment.yaml
+kubectl apply -f deployments/kubernetes/patient-deployment.yaml
+kubectl apply -f deployments/kubernetes/doctor-deployment.yaml
+kubectl apply -f deployments/kubernetes/appointment-deployment.yaml
+kubectl apply -f deployments/kubernetes/notification-deployment.yaml
+kubectl apply -f deployments/kubernetes/mongodb-payment-statefulset.yaml
+kubectl apply -f deployments/kubernetes/payment-deployment.yaml
+kubectl apply -f deployments/kubernetes/symptom-deployment.yaml
+kubectl apply -f deployments/kubernetes/telemedicine-deployment.yaml
+kubectl apply -f deployments/kubernetes/web-app-deployment.yaml
+kubectl apply -f deployments/kubernetes/api-gateway-deployment.yaml
+kubectl apply -f deployments/kubernetes/api-gateway-service.yaml
+```
+
+### 5) Wait for rollouts and check status
+
+```bash
+kubectl get deployments
+kubectl get statefulsets
+kubectl get pods -o wide
+kubectl get svc
+
+kubectl rollout status deployment/auth-service
+kubectl rollout status deployment/patient-service
+kubectl rollout status deployment/doctor-service
+kubectl rollout status deployment/appointment-service
+kubectl rollout status deployment/notification-service
+kubectl rollout status deployment/payment-service
+kubectl rollout status deployment/symptom-service
+kubectl rollout status deployment/telemedicine-service
+kubectl rollout status deployment/web-app
+kubectl rollout status deployment/api-gateway
+kubectl rollout status statefulset/mongodb-payment
+```
+
+### 6) Access endpoints
+
+If your `LoadBalancer` services are not exposed by your local cluster, use port-forward:
+
+```bash
+kubectl port-forward svc/api-gateway-nginx 8080:80
+kubectl port-forward svc/web-app 3000:3000
+```
+
+Then use:
+
+- Gateway health: `http://localhost:8080/health`
+- Auth (via gateway): `http://localhost:8080/api/auth/health`
+- Patient (via gateway): `http://localhost:8080/api/patients/health`
+- Doctor (via gateway): `http://localhost:8080/doctors`
+- Frontend: `http://localhost:3000`
+
+### 7) Logs and troubleshooting
+
+```bash
+kubectl logs deployment/api-gateway --tail=200
+kubectl logs deployment/web-app --tail=200
+kubectl logs deployment/doctor-service --tail=200
+kubectl describe pod <pod-name>
+kubectl get events --sort-by=.metadata.creationTimestamp
+```
+
+### 8) Teardown
+
+```bash
+kubectl delete -f deployments/kubernetes/
+```
+
+## Health Check (Kubernetes)
 
 After startup, verify (via API Gateway):
 
@@ -255,7 +380,7 @@ After startup, verify (via API Gateway):
 - `http://localhost/doctors` (Doctor Service via gateway)
 - `http://localhost/appointments` (Appointment Service via gateway)
 
-Or direct service checks:
+Direct service checks (cluster-local / forwarded):
 
 - `http://localhost:5001/health`
 - `http://localhost:5002/health`
@@ -291,21 +416,21 @@ Expected behavior:
 
 ## Common Run Issues
 
-- Running `docker compose` from the wrong folder:
-	- Always run from `deployments/` where `docker-compose.yml` exists.
+- Kubernetes context mismatch:
+	- Verify with `kubectl config current-context` and `kubectl get nodes`.
 - Port already in use:
-	- Stop conflicting process or change host port mapping in `deployments/docker-compose.yml`.
+	- Stop conflicting local process or change `kubectl port-forward` local port.
 - MongoDB connection errors:
 	- Re-check `AUTH_MONGO_URI` / `PATIENT_MONGO_URI` (or fallback `DATABASE_URL`) in root `.env`.
 - Firebase credential errors at startup:
-	- Ensure `FIREBASE_SERVICE_ACCOUNT_PATH` points to mounted file and file exists.
+	- Ensure the Kubernetes secret exists and pods reference correct keys.
 - AI symptom service exits with code 1:
-	- Ensure `OPENAI_API_KEY` is present in root `.env`.
+	- Ensure `OPENAI_API_KEY` exists in `telemedicine-secrets`.
 	- Ensure `OPENAI_MODEL` is valid (or omit to use default `gpt-4o-mini`).
 - Symptom replies not reaching frontend:
-	- Verify `SYMPTOM_SERVICE_URL` (server-side) or `NEXT_PUBLIC_SYMPTOM_SERVICE_URL` points to `http://localhost:8091`.
-- Stale containers/images:
-	- Run `docker compose down` then `docker compose up --build`.
+	- Verify `SYMPTOM_SERVICE_URL` points to service DNS in cluster (for example `http://symptom-service:8091`).
+- Stale pods after config changes:
+	- Restart deployments: `kubectl rollout restart deployment/<name>`.
 
 ## Project Notes
 
@@ -330,48 +455,26 @@ It covers:
 - `/api/patients/me` profile/report/prescription/history flows
 - happy path + failure case scenarios
 
-## Kubernetes Starter Manifests
+## Kubernetes Manifest Inventory
 
-Minimal manifests are under `deployments/kubernetes/`:
+Current manifests under `deployments/kubernetes/` include:
 
-**API Gateway (recommended entry point):**
-- `api-gateway-deployment.yaml`
-- `api-gateway-service.yaml`
-
-**Service Manifests:**
 - `configmap.yaml`
-- `secret.yaml`
 - `auth-deployment.yaml`
-- `auth-service-deployment.yaml`
-- `auth-service.yaml`
-- `auth-mongo-deployment.yaml`
-- `auth-mongo-service.yaml`
-- `auth-mongo-pvc.yaml`
-- `patient-service-deployment.yaml`
-- `patient-service.yaml`
-- `patient-mongo-deployment.yaml`
-- `patient-mongo-service.yaml`
-- `patient-mongo-pvc.yaml`
+- `patient-deployment.yaml`
 - `doctor-deployment.yaml`
 - `appointment-deployment.yaml`
 - `notification-deployment.yaml`
 - `payment-deployment.yaml`
 - `mongodb-payment-statefulset.yaml`
+- `symptom-deployment.yaml`
+- `telemedicine-deployment.yaml`
+- `web-app-deployment.yaml`
+- `api-gateway-deployment.yaml`
+- `api-gateway-service.yaml`
+- `secret.example.yaml` (template only; do not apply as real secret)
 
-Apply with your cluster context:
-
-1. `kubectl apply -f deployments/kubernetes/api-gateway-deployment.yaml`
-2. `kubectl apply -f deployments/kubernetes/api-gateway-service.yaml`
-3. `kubectl apply -f deployments/kubernetes/configmap.yaml`
-4. `kubectl apply -f deployments/kubernetes/secret.yaml`
-5. `kubectl apply -f deployments/kubernetes/auth-deployment.yaml`
-6. `kubectl apply -f deployments/kubernetes/doctor-deployment.yaml`
-7. `kubectl apply -f deployments/kubernetes/appointment-deployment.yaml`
-8. `kubectl apply -f deployments/kubernetes/notification-deployment.yaml`
-9. `kubectl apply -f deployments/kubernetes/mongodb-payment-statefulset.yaml`
-10. `kubectl apply -f deployments/kubernetes/payment-deployment.yaml`
-
-All services are automatically accessible through the API Gateway LoadBalancer service.
+> Real secrets should be created using `kubectl create secret ...` from local files or env values.
 
 ## Kubernetes Quick Run (Recommended)
 
@@ -528,7 +631,7 @@ This repo maps naturally to a 5-person team — assign one service to each membe
 Guidelines for working in parallel:
 
 - Each developer runs their assigned service locally (see "Run a single service"). Use `PORT` environment variable so services don't conflict with others.
-- For cross-service integration tests, developers can run dependent services locally or use the running Docker Compose stack for shared dependencies.
+- For cross-service integration tests, developers can run dependent services locally or use the Kubernetes namespace deployment.
 - Use the `deploy/k8s-deploy.sh` script to apply secrets/manifests for cluster testing — do not commit secrets.
 - When implementing persistence, write to MongoDB using the `DATABASE_URL` from `.env` so all team members see the same DB in staging.
 - Create small, focused PRs that update one service at a time. Include API contract notes (request/response shapes) in the PR description.
