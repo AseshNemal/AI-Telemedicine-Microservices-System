@@ -42,6 +42,7 @@ type Appointment struct {
 	PatientID            string    `json:"patientId"            bson:"patientId"`
 	PatientName          string    `json:"patientName"          bson:"patientName"          binding:"required"` // display name shown to doctor
 	PatientEmail         string    `json:"patientEmail"         bson:"patientEmail"         binding:"required"` // used for notifications
+	PatientPhone         string    `json:"patientPhone,omitempty" bson:"patientPhone,omitempty"`                 // optional; used for SMS notifications when provided
 	DoctorID             string    `json:"doctorId"             bson:"doctorId"             binding:"required"`
 	DoctorName           string    `json:"doctorName"           bson:"doctorName"`                              // populated at booking time; used for human-readable notifications
 	DoctorEmail          string    `json:"doctorEmail"          bson:"doctorEmail"`                             // populated at booking time; used to notify doctor of reschedule

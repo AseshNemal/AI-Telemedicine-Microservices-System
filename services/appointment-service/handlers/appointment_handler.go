@@ -37,6 +37,7 @@ const maxPendingBookings = 3
 
 // emailRegexp is a basic RFC5322-ish email format check.
 var emailRegexp = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+var phoneRegexp = regexp.MustCompile(`^\+?[0-9\-()\s]{7,20}$`)
 
 // Handler holds shared dependencies for all HTTP handlers.
 type Handler struct {
@@ -230,6 +231,10 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "patientEmail must be a valid email address"})
 		return
 	}
+	if req.PatientPhone != "" && !phoneRegexp.MatchString(req.PatientPhone) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "patientPhone must be a valid phone number"})
+		return
+	}
 	if req.DoctorID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "doctorId is required"})
 		return
@@ -335,6 +340,7 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 		"patientId":     req.PatientID,
 		"patientName":   req.PatientName,
 		"patientEmail":  req.PatientEmail,
+		"patientPhone":  req.PatientPhone,
 		"doctorId":      req.DoctorID,
 		"doctorName":    req.DoctorName,
 		"doctorEmail":   req.DoctorEmail,
@@ -442,7 +448,7 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 	}
 
 	// Step 7 – fire-and-forget notification with payment link.
-	go h.notifSvc.SendBookingConfirmation(req.ID, req.PatientEmail, req.PatientName, doctorDisplayName(req), req.Specialty, req.Date, req.Time, req.CheckoutURL)
+	go h.notifSvc.SendBookingConfirmation(req.ID, req.PatientEmail, req.PatientPhone, req.PatientName, doctorDisplayName(req), req.Specialty, req.Date, req.Time, req.CheckoutURL)
 
 	// Step 8 – return the appointment with the checkout URL the patient must visit.
 	c.JSON(http.StatusCreated, gin.H{
@@ -451,6 +457,7 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 			"id":            req.ID,
 			"patientId":     req.PatientID,
 			"patientName":   req.PatientName,
+			"patientPhone":  req.PatientPhone,
 			"doctorId":      req.DoctorID,
 			"specialty":     req.Specialty,
 			"date":          req.Date,
@@ -549,7 +556,7 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 	}
 
 	// Notify the patient: payment successful, appointment confirmed.
-	go h.notifSvc.SendPaymentConfirmation(appt.ID, appt.PatientEmail, appt.PatientName, doctorDisplayName(appt), appt.Specialty, appt.Date, appt.Time)
+	go h.notifSvc.SendPaymentConfirmation(appt.ID, appt.PatientEmail, appt.PatientPhone, appt.PatientName, doctorDisplayName(appt), appt.Specialty, appt.Date, appt.Time)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Payment confirmed. Your appointment is now confirmed and awaiting the doctor's acceptance.",
@@ -664,7 +671,7 @@ func (h *Handler) ConfirmPaymentInternal(c *gin.Context) {
 		return
 	}
 
-	go h.notifSvc.SendPaymentConfirmation(appt.ID, appt.PatientEmail, appt.PatientName, doctorDisplayName(appt), appt.Specialty, appt.Date, appt.Time)
+	go h.notifSvc.SendPaymentConfirmation(appt.ID, appt.PatientEmail, appt.PatientPhone, appt.PatientName, doctorDisplayName(appt), appt.Specialty, appt.Date, appt.Time)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Payment confirmed automatically.",
@@ -982,7 +989,7 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 	}
 
 	// Fire-and-forget notification.
-	go h.notifSvc.SendStatusUpdate(appt.ID, appt.PatientEmail, doctorDisplayName(appt), appt.Date, appt.Time, newStatus, req.Reason)
+	go h.notifSvc.SendStatusUpdate(appt.ID, appt.PatientEmail, appt.PatientPhone, doctorDisplayName(appt), appt.Date, appt.Time, newStatus, req.Reason)
 
 	resp := gin.H{"message": "status updated", "id": id, "status": newStatus}
 	if roomName != "" {
@@ -1116,7 +1123,7 @@ func (h *Handler) RescheduleAppointment(c *gin.Context) {
 	log.Printf("[appointment-service] appointment %s rescheduled by patient %s to %s %s (reason: %s)", id, uid, req.Date, req.Time, req.Reason)
 
 	// Fire-and-forget notifications: patient confirmation + doctor alert (issue B7).
-	go h.notifSvc.SendRescheduleNotification(appt.ID, appt.PatientEmail, doctorDisplayName(appt), req.Date, req.Time)
+	go h.notifSvc.SendRescheduleNotification(appt.ID, appt.PatientEmail, appt.PatientPhone, doctorDisplayName(appt), req.Date, req.Time)
 	if appt.DoctorEmail != "" {
 		go h.notifSvc.SendDoctorRescheduleAlert(appt.ID, appt.DoctorEmail, appt.PatientName, req.Date, req.Time)
 	}
@@ -1193,7 +1200,7 @@ func (h *Handler) CancelAppointment(c *gin.Context) {
 		}
 	}
 
-	go h.notifSvc.SendStatusUpdate(appt.ID, appt.PatientEmail, doctorDisplayName(appt), appt.Date, appt.Time, models.StatusCancelled, "")
+	go h.notifSvc.SendStatusUpdate(appt.ID, appt.PatientEmail, appt.PatientPhone, doctorDisplayName(appt), appt.Date, appt.Time, models.StatusCancelled, "")
 
 	c.JSON(http.StatusOK, gin.H{"message": "appointment cancelled", "id": id})
 }
@@ -1365,7 +1372,7 @@ func (h *Handler) CompleteAppointmentInternal(c *gin.Context) {
 		return
 	}
 
-	go h.notifSvc.SendStatusUpdate(appt.ID, appt.PatientEmail, doctorDisplayName(appt), appt.Date, appt.Time, models.StatusCompleted, "")
+	go h.notifSvc.SendStatusUpdate(appt.ID, appt.PatientEmail, appt.PatientPhone, doctorDisplayName(appt), appt.Date, appt.Time, models.StatusCompleted, "")
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "appointment completed via consultation workflow",

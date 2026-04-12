@@ -1,5 +1,10 @@
 const Patient = require('../models/Patient');
-const { getFirebaseUidFromRequest, findPatientByFirebaseUid } = require('./patientControllerHelpers');
+const {
+    getFirebaseUidFromRequest,
+    findPatientByFirebaseUid,
+    findOrCreatePatientByFirebaseUid,
+    buildDefaultPatientSeedFromRequest,
+} = require('./patientControllerHelpers');
 
 exports.createPatientProfile = async (req, res, next) => {
     try {
@@ -52,7 +57,7 @@ exports.createDefaultProfileInternal = async (req, res, next) => {
 
 exports.getMyProfile = async (req, res, next) => {
     try {
-        const patient = await findPatientByFirebaseUid(req);
+        const patient = await findOrCreatePatientByFirebaseUid(req);
 
         return res.status(200).json({
             success: true,
@@ -92,16 +97,18 @@ exports.updateMyProfile = async (req, res, next) => {
             }
         }
 
-        const patient = await Patient.findOneAndUpdate(
+        let patient = await Patient.findOneAndUpdate(
             { authUserId: firebaseUid },
             { $set: updates },
             { new: true, runValidators: true }
         );
 
         if (!patient) {
-            const err = new Error('Patient profile not found');
-            err.status = 404;
-            return next(err);
+            const seed = buildDefaultPatientSeedFromRequest(req);
+            patient = await Patient.create({
+                ...seed,
+                ...updates,
+            });
         }
 
         return res.status(200).json({

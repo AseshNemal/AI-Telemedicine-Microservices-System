@@ -6,6 +6,7 @@ import {
   Doctor,
   getDoctors,
   createAppointment,
+  getMyPatientProfile,
 } from "@/app/lib/api";
 import { getFirebaseAuth } from "@/app/lib/firebaseClient";
 
@@ -22,6 +23,7 @@ export default function AppointmentBooking() {
   const [idToken, setIdToken] = useState<string | null>(null);
   const [patientName, setPatientName] = useState("");
   const [patientEmail, setPatientEmail] = useState("");
+  const [patientPhone, setPatientPhone] = useState("");
 
   // Booking form state
   const [date, setDate] = useState("");
@@ -91,6 +93,7 @@ export default function AppointmentBooking() {
       const appointment = await createAppointment({
         patientName,
         patientEmail,
+        patientPhone: patientPhone || undefined,
         doctorId: selectedDoctor.id,
         specialty: selectedDoctor.specialty,
         date,
@@ -126,6 +129,7 @@ export default function AppointmentBooking() {
         setIdToken(null);
         setPatientName("");
         setPatientEmail("");
+        setPatientPhone("");
         return;
       }
 
@@ -133,6 +137,13 @@ export default function AppointmentBooking() {
       setIdToken(token);
       setPatientName(user.displayName || user.email?.split("@")[0] || "Patient");
       setPatientEmail(user.email || "");
+
+      try {
+        const profile = await getMyPatientProfile(token);
+        setPatientPhone(profile?.data?.phone || user.phoneNumber || "");
+      } catch {
+        setPatientPhone(user.phoneNumber || "");
+      }
     });
 
     return () => unsubscribe();
@@ -263,6 +274,13 @@ export default function AppointmentBooking() {
                 value={patientEmail}
                 onChange={(e) => setPatientEmail(e.target.value)}
                 required
+              />
+              <input
+                type="tel"
+                className="field-input"
+                placeholder="Patient phone (optional, for SMS updates)"
+                value={patientPhone}
+                onChange={(e) => setPatientPhone(e.target.value)}
               />
               <input
                 type="date"

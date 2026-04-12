@@ -13,6 +13,7 @@ export type Appointment = {
   patientId: string;
   patientName?: string;
   patientEmail?: string;
+  patientPhone?: string;
   doctorId: string;
   doctorName?: string;
   specialty?: string;
@@ -132,6 +133,7 @@ export async function getDoctors(specialty?: string): Promise<Doctor[]> {
 export async function createAppointment(payload: {
   patientName: string;
   patientEmail: string;
+  patientPhone?: string;
   doctorId: string;
   specialty: string;
   date: string;
