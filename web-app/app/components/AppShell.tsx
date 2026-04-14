@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import HeaderAuthAction from "@/app/components/HeaderAuthAction";
+import LogoutButton from "@/app/components/LogoutButton";
 import MainNav from "@/app/components/MainNav";
 
 function DashboardHeader({ role }: { role: "admin" | "doctor" }) {
@@ -25,6 +26,7 @@ function DashboardHeader({ role }: { role: "admin" | "doctor" }) {
             Dashboard Home
           </Link>
           <HeaderAuthAction />
+          <LogoutButton />
         </div>
       </div>
     </header>

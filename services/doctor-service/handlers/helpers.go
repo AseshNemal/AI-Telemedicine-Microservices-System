@@ -245,3 +245,87 @@ func (h *Handler) UpdateDoctor(c *gin.Context) {
 	_ = h.db.DB.Collection("doctors").FindOne(ctx, bson.M{"id": id}).Decode(&updated)
 	c.JSON(http.StatusOK, updated)
 }
+
+// GetMyDoctorProfile returns the authenticated doctor's own profile (GET /doctor/profile).
+func (h *Handler) GetMyDoctorProfile(c *gin.Context) {
+	if !dbReady(h.db) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
+		return
+	}
+
+	firebaseUID := callerUID(c)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	doc, err := h.fetchDoctorByFirebaseUID(ctx, firebaseUID)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "doctor profile not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch doctor profile"})
+		return
+	}
+
+	c.JSON(http.StatusOK, doc)
+}
+
+// UpdateMyDoctorProfile updates the authenticated doctor's own profile (PUT /doctor/profile).
+func (h *Handler) UpdateMyDoctorProfile(c *gin.Context) {
+	if !dbReady(h.db) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
+		return
+	}
+
+	var req models.UpdateDoctorRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body", "details": err.Error()})
+		return
+	}
+
+	if req.Name == nil && req.Specialty == nil && req.ExperienceYears == nil && req.ConsultationFeeCents == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one updatable field is required"})
+		return
+	}
+
+	firebaseUID := callerUID(c)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	doc, err := h.fetchDoctorByFirebaseUID(ctx, firebaseUID)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "doctor profile not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch doctor profile"})
+		return
+	}
+
+	update := bson.M{"updated_at": time.Now().UTC()}
+	if req.Name != nil {
+		update["name"] = *req.Name
+	}
+	if req.Specialty != nil {
+		update["specialty"] = *req.Specialty
+	}
+	if req.ExperienceYears != nil {
+		update["experience_years"] = *req.ExperienceYears
+	}
+	if req.ConsultationFeeCents != nil {
+		update["consultation_fee_cents"] = *req.ConsultationFeeCents
+	}
+
+	if _, err := h.db.DB.Collection("doctors").UpdateOne(ctx, bson.M{"id": doc.ID}, bson.M{"$set": update}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update doctor profile"})
+		return
+	}
+
+	var updated models.Doctor
+	if err := h.db.DB.Collection("doctors").FindOne(ctx, bson.M{"id": doc.ID}).Decode(&updated); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load updated doctor profile"})
+		return
+	}
+
+	c.JSON(http.StatusOK, updated)
+}

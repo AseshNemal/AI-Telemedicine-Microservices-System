@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   Appointment,
+  Doctor,
+  DoctorAvailability,
   MedicalReport,
   doctorAcceptAppointment,
   doctorEndConsultation,
@@ -12,11 +14,46 @@ import {
   doctorStartConsultation,
   getAppointments,
   getConsultationToken,
+  getDoctorAvailability,
   getDoctorPatientReports,
+  getMyDoctorProfile,
   getMe,
+  updateDoctorAvailability,
+  updateMyDoctorProfile,
 } from "@/app/lib/api";
 import { getFirebaseAuth } from "@/app/lib/firebaseClient";
 import { getDashboardPathForRole } from "@/app/lib/roleRouting";
+
+const WEEK_DAYS = [
+  { day_of_week: 0, label: "Sunday" },
+  { day_of_week: 1, label: "Monday" },
+  { day_of_week: 2, label: "Tuesday" },
+  { day_of_week: 3, label: "Wednesday" },
+  { day_of_week: 4, label: "Thursday" },
+  { day_of_week: 5, label: "Friday" },
+  { day_of_week: 6, label: "Saturday" },
+];
+
+type EditableAvailabilityDay = {
+  day_of_week: number;
+  label: string;
+  enabled: boolean;
+  start_time: string;
+  end_time: string;
+};
+
+function buildAvailabilityForm(slots: DoctorAvailability[] = []): EditableAvailabilityDay[] {
+  return WEEK_DAYS.map((day) => {
+    const found = slots.find((slot) => slot.day_of_week === day.day_of_week);
+    return {
+      day_of_week: day.day_of_week,
+      label: day.label,
+      enabled: Boolean(found),
+      start_time: found?.start_time || "09:00",
+      end_time: found?.end_time || "17:00",
+    };
+  });
+}
 
 export default function DoctorDashboardPage() {
   const router = useRouter();
@@ -28,6 +65,16 @@ export default function DoctorDashboardPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [reportsByAppointment, setReportsByAppointment] = useState<Record<string, MedicalReport[]>>({});
   const [reportsLoadingId, setReportsLoadingId] = useState<string | null>(null);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [availabilitySaving, setAvailabilitySaving] = useState(false);
+  const [doctorProfile, setDoctorProfile] = useState<Doctor | null>(null);
+  const [availabilityForm, setAvailabilityForm] = useState<EditableAvailabilityDay[]>(buildAvailabilityForm());
+  const [profileForm, setProfileForm] = useState({
+    name: "",
+    specialty: "",
+    experienceYears: "",
+    consultationFeeCents: "",
+  });
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -53,7 +100,25 @@ export default function DoctorDashboardPage() {
         }
 
         setDisplayName(me?.data?.fullName || user.displayName || "Doctor");
-        const data = await getAppointments(token);
+        const [profile, data] = await Promise.all([
+          getMyDoctorProfile(token).catch(() => null),
+          getAppointments(token),
+        ]);
+        if (profile) {
+          setDoctorProfile(profile);
+          setProfileForm({
+            name: profile.name || "",
+            specialty: profile.specialty || "",
+            experienceYears: String(profile.experience_years ?? ""),
+            consultationFeeCents: String(profile.consultation_fee_cents ?? ""),
+          });
+          setDisplayName(profile.name || me?.data?.fullName || user.displayName || "Doctor");
+
+          if (profile.id) {
+            const availability = await getDoctorAvailability(profile.id).catch(() => []);
+            setAvailabilityForm(buildAvailabilityForm(Array.isArray(availability) ? availability : []));
+          }
+        }
         setAppointments(Array.isArray(data) ? data : []);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load doctor dashboard");
@@ -208,6 +273,93 @@ export default function DoctorDashboardPage() {
     }
   }
 
+  async function handleSaveProfile() {
+    if (!idToken) {
+      setError("Please sign in again.");
+      return;
+    }
+
+    const name = profileForm.name.trim();
+    const specialty = profileForm.specialty.trim();
+    const experienceYears = Number(profileForm.experienceYears || 0);
+    const consultationFeeCents = Number(profileForm.consultationFeeCents || 0);
+
+    if (!name || !specialty) {
+      setError("Name and specialty are required.");
+      return;
+    }
+    if (Number.isNaN(experienceYears) || experienceYears < 0) {
+      setError("Experience years must be a valid non-negative number.");
+      return;
+    }
+    if (Number.isNaN(consultationFeeCents) || consultationFeeCents < 0) {
+      setError("Consultation fee (cents) must be a valid non-negative number.");
+      return;
+    }
+
+    setProfileSaving(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const updated = await updateMyDoctorProfile(idToken, {
+        name,
+        specialty,
+        experience_years: experienceYears,
+        consultation_fee_cents: consultationFeeCents,
+      });
+      setDoctorProfile(updated);
+      setDisplayName(updated.name || displayName);
+      setMessage("Profile updated successfully.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update profile");
+    } finally {
+      setProfileSaving(false);
+    }
+  }
+
+  async function handleSaveAvailability() {
+    if (!idToken || !doctorProfile?.id) {
+      setError("Doctor profile is not loaded yet. Please refresh and try again.");
+      return;
+    }
+
+    const enabledDays = availabilityForm.filter((item) => item.enabled);
+    for (const day of enabledDays) {
+      if (!day.start_time || !day.end_time) {
+        setError(`Please set both start and end time for ${day.label}.`);
+        return;
+      }
+      if (day.start_time >= day.end_time) {
+        setError(`Start time must be before end time for ${day.label}.`);
+        return;
+      }
+    }
+
+    setAvailabilitySaving(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const updated = await updateDoctorAvailability(
+        doctorProfile.id,
+        enabledDays.map((day) => ({
+          day_of_week: day.day_of_week,
+          start_time: day.start_time,
+          end_time: day.end_time,
+        })),
+        idToken
+      );
+
+      setAvailabilityForm(buildAvailabilityForm(updated));
+      setMessage("Availability updated successfully.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update availability");
+    } finally {
+      setAvailabilitySaving(false);
+    }
+  }
+
   return (
     <main className="page-shell">
       <section className="hero-shell">
@@ -239,6 +391,121 @@ export default function DoctorDashboardPage() {
 
       {error && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {message && <p className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">{message}</p>}
+
+      <section className="surface-card">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="section-kicker">Doctor profile</p>
+            <h2 className="mt-2 text-2xl font-bold text-slate-900">Edit your profile</h2>
+            <p className="mt-2 text-sm text-slate-600">Update your visible details and consultation settings.</p>
+          </div>
+          {doctorProfile?.verification_status && (
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${doctorProfile.verification_status === "VERIFIED" ? "bg-emerald-50 text-emerald-700" : doctorProfile.verification_status === "PENDING" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
+              {doctorProfile.verification_status}
+            </span>
+          )}
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2">
+          <input
+            className="field-input"
+            placeholder="Full name"
+            value={profileForm.name}
+            onChange={(e) => setProfileForm((prev) => ({ ...prev, name: e.target.value }))}
+          />
+          <input
+            className="field-input"
+            placeholder="Specialty"
+            value={profileForm.specialty}
+            onChange={(e) => setProfileForm((prev) => ({ ...prev, specialty: e.target.value }))}
+          />
+          <input
+            className="field-input"
+            type="number"
+            min={0}
+            placeholder="Experience years"
+            value={profileForm.experienceYears}
+            onChange={(e) => setProfileForm((prev) => ({ ...prev, experienceYears: e.target.value }))}
+          />
+          <input
+            className="field-input"
+            type="number"
+            min={0}
+            step={100}
+            placeholder="Consultation fee (cents)"
+            value={profileForm.consultationFeeCents}
+            onChange={(e) => setProfileForm((prev) => ({ ...prev, consultationFeeCents: e.target.value }))}
+          />
+          <div className="md:col-span-2">
+            <button className="btn-primary" onClick={() => void handleSaveProfile()} disabled={loading || profileSaving || !idToken}>
+              {profileSaving ? "Saving profile..." : "Save profile"}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section className="surface-card">
+        <div>
+          <p className="section-kicker">Consultation times</p>
+          <h2 className="mt-2 text-2xl font-bold text-slate-900">Weekly availability</h2>
+          <p className="mt-2 text-sm text-slate-600">Choose which days you accept bookings and set your consultation hours.</p>
+        </div>
+
+        <div className="mt-5 space-y-3">
+          {availabilityForm.map((day) => (
+            <div key={day.day_of_week} className="grid items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[140px_120px_1fr_1fr]">
+              <p className="text-sm font-semibold text-slate-900">{day.label}</p>
+              <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={day.enabled}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setAvailabilityForm((prev) => prev.map((item) => (
+                      item.day_of_week === day.day_of_week ? { ...item, enabled: checked } : item
+                    )));
+                  }}
+                />
+                Available
+              </label>
+              <input
+                className="field-input"
+                type="time"
+                step={900}
+                value={day.start_time}
+                disabled={!day.enabled}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setAvailabilityForm((prev) => prev.map((item) => (
+                    item.day_of_week === day.day_of_week ? { ...item, start_time: value } : item
+                  )));
+                }}
+              />
+              <input
+                className="field-input"
+                type="time"
+                step={900}
+                value={day.end_time}
+                disabled={!day.enabled}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setAvailabilityForm((prev) => prev.map((item) => (
+                    item.day_of_week === day.day_of_week ? { ...item, end_time: value } : item
+                  )));
+                }}
+              />
+            </div>
+          ))}
+
+          <button
+            className="btn-primary"
+            onClick={() => void handleSaveAvailability()}
+            disabled={loading || availabilitySaving || !idToken || !doctorProfile?.id}
+          >
+            {availabilitySaving ? "Saving times..." : "Save times"}
+          </button>
+        </div>
+      </section>
 
       <section className="surface-card">
         <div className="flex items-center justify-between gap-4">

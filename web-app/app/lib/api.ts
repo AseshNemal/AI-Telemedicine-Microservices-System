@@ -7,8 +7,16 @@ export type Doctor = {
   hospital: string;
   availability: string[];
   consultation_fee_cents?: number;
+  experience_years?: number;
   verification_status?: string;
 };
+
+export type DoctorProfileUpdateRequest = Partial<{
+  name: string;
+  specialty: string;
+  experience_years: number;
+  consultation_fee_cents: number;
+}>;
 
 export type Appointment = {
   id: string;
@@ -156,6 +164,12 @@ export type DoctorAvailability = {
   end_time: string; // HH:MM
 };
 
+export type DoctorAvailabilitySlotInput = {
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+};
+
 export type DoctorScheduleSummaryDate = {
   date: string;
   dayOfWeek: number;
@@ -221,6 +235,62 @@ export async function getDoctorAvailability(doctorId: string): Promise<DoctorAva
     const message = await safeMessage(res);
     throw new Error(message || `Failed to fetch availability (${res.status})`);
   }
+  return res.json();
+}
+
+export async function updateDoctorAvailability(
+  doctorId: string,
+  slots: DoctorAvailabilitySlotInput[],
+  idToken: string
+): Promise<DoctorAvailability[]> {
+  const res = await fetch(`${doctorBase}/doctors/${encodeURIComponent(doctorId)}/availability`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify(slots),
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to update doctor availability (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function getMyDoctorProfile(idToken: string): Promise<Doctor> {
+  const res = await fetch(`${doctorBase}/doctor/profile`, {
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to fetch doctor profile (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function updateMyDoctorProfile(idToken: string, payload: DoctorProfileUpdateRequest): Promise<Doctor> {
+  const res = await fetch(`${doctorBase}/doctor/profile`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to update doctor profile (${res.status})`);
+  }
+
   return res.json();
 }
 
