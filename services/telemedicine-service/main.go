@@ -24,7 +24,14 @@ func loadEnv() {
 func allowedOrigins() []string {
 	raw := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))
 	if raw == "" {
-		return []string{"http://localhost:3000", "http://127.0.0.1:3000"}
+		return []string{
+			"http://localhost:3000",
+			"http://127.0.0.1:3000",
+			"http://localhost",
+			"http://127.0.0.1",
+			"http://localhost:8080",
+			"http://127.0.0.1:8080",
+		}
 	}
 
 	parts := strings.Split(raw, ",")
@@ -37,7 +44,14 @@ func allowedOrigins() []string {
 	}
 
 	if len(origins) == 0 {
-		return []string{"http://localhost:3000", "http://127.0.0.1:3000"}
+		return []string{
+			"http://localhost:3000",
+			"http://127.0.0.1:3000",
+			"http://localhost",
+			"http://127.0.0.1",
+			"http://localhost:8080",
+			"http://127.0.0.1:8080",
+		}
 	}
 
 	return origins

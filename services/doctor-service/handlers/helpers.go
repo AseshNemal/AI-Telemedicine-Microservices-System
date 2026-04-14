@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -47,9 +48,31 @@ func callerUID(c *gin.Context) string {
 // svcURL resolves a service URL from an env var, falling back to the default.
 func svcURL(envKey, fallback string) string {
 	if v := os.Getenv(envKey); v != "" {
-		return v
+		switch {
+		case strings.Contains(v, "appointment-service"):
+			return "http://localhost:8083"
+		case strings.Contains(v, "patient-service"):
+			return "http://localhost:5002"
+		case strings.Contains(v, "telemedicine-service"):
+			return "http://localhost:8086"
+		case strings.Contains(v, "notification-service"):
+			return "http://localhost:8084"
+		default:
+			return v
+		}
 	}
-	return fallback
+	switch fallback {
+	case "http://appointment-service:8081":
+		return "http://localhost:8083"
+	case "http://patient-service:8083":
+		return "http://localhost:5002"
+	case "http://telemedicine-service:8086":
+		return "http://localhost:8086"
+	case "http://notification-service:8084":
+		return "http://localhost:8084"
+	default:
+		return fallback
+	}
 }
 
 // outboundJSON performs an HTTP request with a JSON body and returns the status,

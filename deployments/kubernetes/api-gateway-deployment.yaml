@@ -6,7 +6,7 @@ metadata:
     app: api-gateway
     component: nginx
 spec:
-  replicas: 3
+  replicas: 1
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -54,10 +54,10 @@ spec:
         resources:
           requests:
             memory: "64Mi"
-            cpu: "100m"
+            cpu: "50m"
           limits:
-            memory: "256Mi"
-            cpu: "500m"
+            memory: "192Mi"
+            cpu: "200m"
         securityContext:
           readOnlyRootFilesystem: false
           allowPrivilegeEscalation: false

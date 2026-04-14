@@ -7,9 +7,11 @@ import {
   Appointment,
   createDoctorAccount,
   getAppointments,
-  getDoctors,
+  getAdminDoctors,
   getMe,
   Doctor,
+  suspendDoctor,
+  verifyDoctor,
 } from "@/app/lib/api";
 import { getFirebaseAuth } from "@/app/lib/firebaseClient";
 import { getDashboardPathForRole } from "@/app/lib/roleRouting";
@@ -38,6 +40,7 @@ export default function AdminDashboardPage() {
   const [displayName, setDisplayName] = useState<string>("Admin");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [doctorActionId, setDoctorActionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [form, setForm] = useState<DoctorForm>({
@@ -50,11 +53,23 @@ export default function AdminDashboardPage() {
   });
 
   function doctorKey(doctor: Doctor, index: number) {
-    return doctor.id || `${doctor.name}-${doctor.specialty}-${index}`;
+    // Ensure a stable, non-empty key. Prefer explicit id; otherwise build a deterministic
+    // fallback that includes the map index to guarantee uniqueness among siblings.
+    const id = (doctor && typeof doctor.id === "string" && doctor.id.trim()) || null;
+    if (id) return `doctor-${id}`;
+    const name = (doctor?.name || "unknown").replace(/\s+/g, "_");
+    const spec = (doctor?.specialty || "unspecified").replace(/\s+/g, "_");
+    return `doctor-${name}-${spec}-${index}`;
   }
 
   function appointmentKey(appointment: Appointment, index: number) {
-    return appointment.id || `${appointment.patientId}-${appointment.doctorId}-${appointment.date}-${appointment.time}-${index}`;
+    const id = (appointment && typeof appointment.id === "string" && appointment.id.trim()) || null;
+    if (id) return `appointment-${id}`;
+    const patient = appointment?.patientId || "unknownPatient";
+    const doctorId = appointment?.doctorId || "unknownDoctor";
+    const date = appointment?.date || "nodate";
+    const time = appointment?.time || "notime";
+    return `appointment-${patient}-${doctorId}-${date}-${time}-${index}`;
   }
 
   useEffect(() => {
@@ -84,7 +99,7 @@ export default function AdminDashboardPage() {
 
         const [appointmentData, doctorData] = await Promise.all([
           getAppointments(token),
-          getDoctors(),
+          getAdminDoctors(token),
         ]);
 
         setAppointments(Array.isArray(appointmentData) ? appointmentData : []);
@@ -247,7 +262,9 @@ export default function AdminDashboardPage() {
             <button
               className="btn-secondary text-sm"
               onClick={() => {
-                void getDoctors().then((data) => setDoctors(Array.isArray(data) ? data : []));
+                if (idToken) {
+                  void getAdminDoctors(idToken).then((data) => setDoctors(Array.isArray(data) ? data : []));
+                }
               }}
               disabled={loading}
             >
@@ -260,12 +277,68 @@ export default function AdminDashboardPage() {
             {!loading && doctors.length === 0 && <p className="text-sm text-slate-600">No doctor records found yet.</p>}
             {doctors.map((doctor, index) => (
               <article key={doctorKey(doctor, index)} className="rounded-2xl border border-slate-200 bg-white p-4">
-                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">{doctor.specialty}</p>
-                <h3 className="mt-1 text-lg font-semibold text-slate-900">{doctor.name}</h3>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.14em] text-slate-500">{doctor.specialty}</p>
+                    <h3 className="mt-1 text-lg font-semibold text-slate-900">{doctor.name}</h3>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${doctor.verification_status === "VERIFIED" ? "bg-emerald-50 text-emerald-700" : doctor.verification_status === "PENDING" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
+                    {doctor.verification_status || "UNKNOWN"}
+                  </span>
+                </div>
                 <p className="mt-1 text-sm text-slate-600">{doctor.hospital}</p>
                 <p className="mt-2 text-xs text-slate-500">
                   {doctor.availability?.length ? doctor.availability.join(" • ") : "No availability listed"}
                 </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {doctor.verification_status !== "VERIFIED" && (
+                    <button
+                      className="btn-primary text-xs"
+                      disabled={loading || doctorActionId === doctor.id}
+                      onClick={async () => {
+                        if (!idToken) return;
+                        setDoctorActionId(doctor.id);
+                        setError(null);
+                        setMessage(null);
+                        try {
+                          const updated = await verifyDoctor(doctor.id, idToken);
+                          setDoctors((current) => current.map((item) => (item.id === doctor.id ? updated : item)));
+                          setMessage(`Doctor ${doctor.name} verified.`);
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : "Failed to verify doctor");
+                        } finally {
+                          setDoctorActionId(null);
+                        }
+                      }}
+                    >
+                      Verify
+                    </button>
+                  )}
+                  {doctor.verification_status !== "SUSPENDED" && (
+                    <button
+                      className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+                      disabled={loading || doctorActionId === doctor.id}
+                      onClick={async () => {
+                        if (!idToken) return;
+                        if (!confirm(`Suspend doctor ${doctor.name}?`)) return;
+                        setDoctorActionId(doctor.id);
+                        setError(null);
+                        setMessage(null);
+                        try {
+                          const updated = await suspendDoctor(doctor.id, idToken);
+                          setDoctors((current) => current.map((item) => (item.id === doctor.id ? updated : item)));
+                          setMessage(`Doctor ${doctor.name} suspended.`);
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : "Failed to suspend doctor");
+                        } finally {
+                          setDoctorActionId(null);
+                        }
+                      }}
+                    >
+                      Suspend
+                    </button>
+                  )}
+                </div>
               </article>
             ))}
           </div>

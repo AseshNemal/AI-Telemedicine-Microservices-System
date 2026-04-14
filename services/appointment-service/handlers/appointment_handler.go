@@ -1318,6 +1318,215 @@ func (h *Handler) Health(c *gin.Context) {
 	})
 }
 
+type scheduleSummaryDate struct {
+	Date           string `json:"date"`
+	DayOfWeek      int    `json:"dayOfWeek"`
+	TotalSlots     int    `json:"totalSlots"`
+	BookedCount    int    `json:"bookedCount"`
+	AvailableSlots int    `json:"availableSlots"`
+}
+
+type scheduleSummarySlot struct {
+	Time       string `json:"time"`
+	BookedCount int   `json:"bookedCount"`
+	Available  bool   `json:"available"`
+}
+
+// GetDoctorScheduleSummary returns real booking-aware availability for a doctor.
+//
+// GET /doctors/:id/schedule-summary?from=YYYY-MM-DD&days=30
+//
+// Access: any authenticated user.
+func (h *Handler) GetDoctorScheduleSummary(c *gin.Context) {
+	doctorID := strings.TrimSpace(c.Param("id"))
+	if doctorID == "" || len(doctorID) > 128 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid doctor id"})
+		return
+	}
+
+	if _, err := h.doctorSvc.GetDoctorByID(doctorID); err != nil {
+		if errors.Is(err, services.ErrDoctorNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "doctor not found"})
+			return
+		}
+		log.Printf("[appointment-service] get doctor schedule summary failed to resolve doctor %s: %v", doctorID, err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "could not reach doctor service"})
+		return
+	}
+
+	availability, err := h.doctorSvc.GetDoctorAvailability(doctorID)
+	if err != nil {
+		log.Printf("[appointment-service] get doctor schedule summary availability failed for doctor %s: %v", doctorID, err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": "could not load doctor availability"})
+		return
+	}
+
+	fromDate := time.Now().UTC().Truncate(24 * time.Hour)
+	if raw := strings.TrimSpace(c.Query("from")); raw != "" {
+		parsed, parseErr := time.ParseInLocation("2006-01-02", raw, time.UTC)
+		if parseErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid from date; expected YYYY-MM-DD"})
+			return
+		}
+		fromDate = parsed
+	}
+
+	days := 30
+	if rawDays := strings.TrimSpace(c.Query("days")); rawDays != "" {
+		parsedDays, parseErr := strconv.Atoi(rawDays)
+		if parseErr != nil || parsedDays < 1 || parsedDays > 90 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid days; expected 1-90"})
+			return
+		}
+		days = parsedDays
+	}
+
+	parseHHMMToMinutes := func(s string) (int, bool) {
+		parts := strings.Split(s, ":")
+		if len(parts) != 2 {
+			return 0, false
+		}
+		h, errH := strconv.Atoi(parts[0])
+		m, errM := strconv.Atoi(parts[1])
+		if errH != nil || errM != nil || h < 0 || h > 23 || m < 0 || m > 59 {
+			return 0, false
+		}
+		return h*60 + m, true
+	}
+
+	makeSlots := func(startHHMM, endHHMM string) []string {
+		start, okStart := parseHHMMToMinutes(startHHMM)
+		end, okEnd := parseHHMMToMinutes(endHHMM)
+		if !okStart || !okEnd || end <= start {
+			return nil
+		}
+		slots := make([]string, 0, (end-start)/15)
+		for minute := start; minute < end; minute += 15 {
+			hh := minute / 60
+			mm := minute % 60
+			slots = append(slots, fmt.Sprintf("%02d:%02d", hh, mm))
+		}
+		return slots
+	}
+
+	weeklySlots := map[int][]string{}
+	for _, block := range availability {
+		if block.DayOfWeek < 0 || block.DayOfWeek > 6 {
+			continue
+		}
+		slots := makeSlots(block.StartTime, block.EndTime)
+		if len(slots) == 0 {
+			continue
+		}
+		weeklySlots[block.DayOfWeek] = append(weeklySlots[block.DayOfWeek], slots...)
+	}
+
+	if !dbReady(h.db) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
+		return
+	}
+
+	toDate := fromDate.AddDate(0, 0, days-1)
+	fromStr := fromDate.Format("2006-01-02")
+	toStr := toDate.Format("2006-01-02")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+
+	cursor, findErr := h.db.DB.Collection("appointments").Find(ctx, bson.M{
+		"doctorId": doctorID,
+		"date": bson.M{
+			"$gte": fromStr,
+			"$lte": toStr,
+		},
+		"status": bson.M{
+			"$in": []string{models.StatusPendingPayment, models.StatusConfirmed, models.StatusBooked},
+		},
+	})
+	if findErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to load appointment bookings"})
+		return
+	}
+
+	var appts []models.Appointment
+	if err := cursor.All(ctx, &appts); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read appointment bookings"})
+		return
+	}
+
+	bookingsByDateAndTime := map[string]map[string]int{}
+	for _, appt := range appts {
+		if bookingsByDateAndTime[appt.Date] == nil {
+			bookingsByDateAndTime[appt.Date] = map[string]int{}
+		}
+		bookingsByDateAndTime[appt.Date][appt.Time]++
+	}
+
+	dates := make([]scheduleSummaryDate, 0, days)
+	slotsByDate := map[string][]scheduleSummarySlot{}
+
+	for i := 0; i < days; i++ {
+		current := fromDate.AddDate(0, 0, i)
+		dateKey := current.Format("2006-01-02")
+		dow := int(current.Weekday())
+
+		weekdaySlots := weeklySlots[dow]
+		if len(weekdaySlots) == 0 {
+			continue
+		}
+
+		seen := map[string]bool{}
+		uniqueSlots := make([]string, 0, len(weekdaySlots))
+		for _, slot := range weekdaySlots {
+			if slot == "" || seen[slot] {
+				continue
+			}
+			seen[slot] = true
+			uniqueSlots = append(uniqueSlots, slot)
+		}
+
+		totalSlots := len(uniqueSlots)
+		if totalSlots == 0 {
+			continue
+		}
+
+		dateSlots := make([]scheduleSummarySlot, 0, totalSlots)
+		bookedCount := 0
+		for _, slot := range uniqueSlots {
+			count := bookingsByDateAndTime[dateKey][slot]
+			bookedCount += count
+			dateSlots = append(dateSlots, scheduleSummarySlot{
+				Time:        slot,
+				BookedCount: count,
+				Available:   count == 0,
+			})
+		}
+
+		availableSlots := totalSlots - bookedCount
+		if availableSlots < 0 {
+			availableSlots = 0
+		}
+
+		dates = append(dates, scheduleSummaryDate{
+			Date:           dateKey,
+			DayOfWeek:      dow,
+			TotalSlots:     totalSlots,
+			BookedCount:    bookedCount,
+			AvailableSlots: availableSlots,
+		})
+		slotsByDate[dateKey] = dateSlots
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"doctorId":    doctorID,
+		"from":        fromStr,
+		"to":          toStr,
+		"days":        days,
+		"dates":       dates,
+		"slotsByDate": slotsByDate,
+	})
+}
+
 // CompleteAppointmentInternal is an internal service-to-service endpoint called by
 // doctor-service after EndConsultation completes a consultation (C-6).
 //

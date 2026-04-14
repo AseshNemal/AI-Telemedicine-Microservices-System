@@ -23,6 +23,47 @@ Install the following before running:
 4. Place Firebase service account JSON and any other provider private files in a local `secrets/` folder that is gitignored (see `.gitignore`).
 5. (Optional) Use `.env.example` as a reference template.
 
+## Run Locally Without Docker (Multi-Terminal)
+
+If you run services directly (not via Docker/Kubernetes), use direct localhost service URLs in env:
+
+- Auth: `http://localhost:8081`
+- Patient: `http://localhost:5002`
+- Doctor: `http://localhost:8082`
+- Appointment: `http://localhost:8083`
+- Notification: `http://localhost:8084`
+- Payment: `http://localhost:8085`
+- Symptom: `http://localhost:8091`
+- Telemedicine: `http://localhost:8086`
+- Frontend: `http://localhost:3000`
+
+In every backend terminal, load root env first:
+
+```bash
+set -a; source ./.env; set +a
+```
+
+Then run services in separate terminals:
+
+```bash
+# Node services
+cd services/auth-service-node && npm run start
+cd services/patient-service-node && npm run start
+
+# Go services
+cd services/doctor-service && go run .
+cd services/appointment-service && go run .
+cd services/notification-service && go run .
+cd services/payment-service && go run .
+cd services/AI-symptom-service && go run .
+cd services/telemedicine-service && go run .
+
+# Frontend (new terminal)
+cd web-app && npm run dev
+```
+
+If backend services cannot call each other, it usually means one terminal started without loading `.env` first.
+
 ## 🚀 One-Command Run (Kubernetes)
 
 From the project root, run:
@@ -199,16 +240,19 @@ Required:
 	- `FIREBASE_SERVICE_ACCOUNT_PATH`
 	- Optional fallback: `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY`
 - Frontend URLs:
+	- `NEXT_PUBLIC_API_URL` (recommended gateway base, e.g. `http://localhost:8080`)
 	- `NEXT_PUBLIC_AUTH_SERVICE_URL`
 	- `NEXT_PUBLIC_PATIENT_SERVICE_URL`
 	- `NEXT_PUBLIC_DOCTOR_SERVICE_URL`
 	- `NEXT_PUBLIC_APPOINTMENT_SERVICE_URL`
 	- `NEXT_PUBLIC_PAYMENT_SERVICE_URL`
 	- `NEXT_PUBLIC_SYMPTOM_SERVICE_URL`
+	- `NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL`
 - AI symptom service:
 	- `OPENAI_API_KEY` (required)
 	- `OPENAI_MODEL` (optional, default: `gpt-4o-mini`)
 	- `SYMPTOM_SERVICE_URL` (for Next.js server-side proxy, default: `http://localhost:8091`)
+	- `API_GATEWAY_URL` (optional server-side internal gateway URL; default: `http://api-gateway-nginx` in K8s)
 
 Node service runtime mapping in Docker/K8s:
 - Auth service uses `MONGO_URI`, `PATIENT_SERVICE_URL`, `INTERNAL_SERVICE_KEY`, Firebase vars
@@ -510,6 +554,11 @@ Useful script flags:
 ./k8s-up.sh --help
 ```
 
+Low-resource default profile:
+
+- Kubernetes manifests are tuned for low-resource local clusters (single replica per service, reduced CPU/memory requests).
+- If you need higher throughput/HA, increase `replicas` and resource limits in `deployments/kubernetes/*deployment.yaml`.
+
 Teardown:
 
 ```bash
@@ -668,4 +717,3 @@ Notes:
 - A pre-commit secret scan hook is included at `.githooks/pre-commit`.
 - Enable it once per clone by setting Git hooks path to `.githooks`.
 - Emergency bypass (use sparingly): set `SKIP_SECRET_SCAN=1` for a single commit.
-

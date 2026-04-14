@@ -4,7 +4,7 @@ metadata:
   name: web-app
   namespace: default
 spec:
-  replicas: 2
+  replicas: 1
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -27,6 +27,11 @@ spec:
               containerPort: 3000
 
           env:
+            - name: NEXT_PUBLIC_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_API_URL
             # ── Public service URLs (via API Gateway) ────────────────────────
             - name: NEXT_PUBLIC_AUTH_SERVICE_URL
               valueFrom:
@@ -63,6 +68,11 @@ spec:
                 configMapKeyRef:
                   name: telemedicine-config
                   key: SYMPTOM_SERVICE_URL
+            - name: API_GATEWAY_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: API_GATEWAY_INTERNAL_URL
 
             # ── Firebase (public vars) ────────────────────────────────────────
             - name: NEXT_PUBLIC_FIREBASE_PROJECT_ID
@@ -109,11 +119,11 @@ spec:
 
           resources:
             requests:
-              memory: "256Mi"
-              cpu: "250m"
+              memory: "128Mi"
+              cpu: "100m"
             limits:
-              memory: "512Mi"
-              cpu: "500m"
+              memory: "256Mi"
+              cpu: "300m"
 
           livenessProbe:
             httpGet:

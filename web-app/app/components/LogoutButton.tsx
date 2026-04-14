@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getFirebaseAuth } from "@/app/lib/firebaseClient";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { useEffect } from "react";
 
 export default function LogoutButton() {
   const router = useRouter();
@@ -25,7 +24,7 @@ export default function LogoutButton() {
     try {
       const auth = getFirebaseAuth();
       await signOut(auth);
-    } catch (err) {
+    } catch {
       // best-effort sign out; ignore errors
     } finally {
       setLoading(false);

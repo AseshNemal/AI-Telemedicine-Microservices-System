@@ -28,7 +28,14 @@ func main() {
 
 	// 4. CORS — restrict to known origins in production via APPOINTMENT_CORS_ORIGINS env var.
 	// Multiple origins may be specified as a comma-separated list.
-	allowedOrigins := []string{"http://localhost:3000", "http://127.0.0.1:3000"}
+	allowedOrigins := []string{
+		"http://localhost:3000",
+		"http://127.0.0.1:3000",
+		"http://localhost",
+		"http://127.0.0.1",
+		"http://localhost:8080",
+		"http://127.0.0.1:8080",
+	}
 	if envOrigins := os.Getenv("APPOINTMENT_CORS_ORIGINS"); envOrigins != "" {
 		parts := strings.Split(envOrigins, ",")
 		parsed := make([]string, 0, len(parts))

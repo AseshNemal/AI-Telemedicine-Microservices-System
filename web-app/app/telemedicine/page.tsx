@@ -14,6 +14,7 @@ export default function TelemedicinePage() {
   const [participantName, setParticipantName] = useState("Demo Patient");
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [creatingToken, setCreatingToken] = useState(false);
+  const [enteringRoom, setEnteringRoom] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [room, setRoom] = useState<TelemedicineRoomResponse | null>(null);
   const [tokenResult, setTokenResult] = useState<TelemedicineTokenResponse | null>(null);
@@ -61,6 +62,33 @@ export default function TelemedicinePage() {
       setError(err instanceof Error ? err.message : "Failed to create token");
     } finally {
       setCreatingToken(false);
+    }
+  }
+
+  async function onEnterRoom() {
+    setError(null);
+    setEnteringRoom(true);
+
+    try {
+      const result = await createTelemedicineToken({
+        roomName,
+        participantIdentity: identity,
+        participantName,
+        metadata,
+        ttlSeconds: 3600,
+        canPublish: true,
+        canSubscribe: true,
+        canPublishData: true,
+      });
+
+      setTokenResult(result);
+
+      const joinUrl = `https://meet.livekit.io/custom?liveKitUrl=${encodeURIComponent(result.wsUrl)}&token=${encodeURIComponent(result.token)}`;
+      window.open(joinUrl, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to enter room");
+    } finally {
+      setEnteringRoom(false);
     }
   }
 
@@ -116,6 +144,14 @@ export default function TelemedicinePage() {
             >
               {creatingToken ? "Generating token..." : "Generate Participant Token"}
             </button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={onEnterRoom}
+              disabled={enteringRoom || creatingToken}
+            >
+              {enteringRoom ? "Entering room..." : "Enter Room"}
+            </button>
           </div>
         </form>
 
@@ -135,6 +171,9 @@ export default function TelemedicinePage() {
             <p className="mt-1 break-all">WebSocket URL: {tokenResult.wsUrl}</p>
             <p className="mt-1 break-all">Token: {tokenResult.token}</p>
             <p className="mt-1">Expires in: {tokenResult.expiresInSeconds}s</p>
+            <p className="mt-2 text-xs text-cyan-700">
+              Tip: click <strong>Enter Room</strong> to open the LiveKit room with this token.
+            </p>
           </div>
         )}
       </section>

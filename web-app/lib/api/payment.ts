@@ -1,3 +1,5 @@
+import { resolveServiceBase } from "@/lib/api/baseUrls";
+
 export type PaymentMethod = "CARD" | "MOBILE" | "BANK_TRANSFER";
 
 export type PaymentRecord = {
@@ -42,8 +44,10 @@ export type VerifyPaymentResult = {
   status: string;
 };
 
-const paymentBase =
-  process.env.NEXT_PUBLIC_PAYMENT_SERVICE_URL ?? "http://localhost:8085";
+const paymentBase = resolveServiceBase(
+  process.env.NEXT_PUBLIC_PAYMENT_SERVICE_URL,
+  "",
+);
 
 export async function getPayment(transactionId: string, idToken: string): Promise<PaymentRecord | null> {
   const res = await fetch(`${paymentBase}/payments/${encodeURIComponent(transactionId)}`, {

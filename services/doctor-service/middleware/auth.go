@@ -25,6 +25,7 @@ const (
 // authServiceURL is resolved once at startup from AUTH_SERVICE_URL.
 // Default matches the Kubernetes service name and port used by the auth-service-node.
 var authServiceURL string
+var authServiceURLOnce sync.Once
 
 var authHTTPClient = &http.Client{Timeout: 5 * time.Second}
 
@@ -69,12 +70,20 @@ func startCacheSweep() {
 	}()
 }
 
+func resolveAuthServiceURL() string {
+	authServiceURLOnce.Do(func() {
+		authServiceURL = strings.TrimSpace(os.Getenv("AUTH_SERVICE_URL"))
+		if authServiceURL == "" {
+			authServiceURL = "http://auth-service:3001"
+		}
+		authServiceURL = strings.TrimRight(authServiceURL, "/")
+		log.Printf("[doctor-service] auth-service URL: %s", authServiceURL)
+	})
+
+	return authServiceURL
+}
+
 func init() {
-	authServiceURL = os.Getenv("AUTH_SERVICE_URL")
-	if authServiceURL == "" {
-		authServiceURL = "http://auth-service:3001"
-	}
-	log.Printf("[doctor-service] auth-service URL: %s", authServiceURL)
 	startCacheSweep()
 }
 
@@ -118,8 +127,9 @@ func VerifyToken() gin.HandlerFunc {
 		}
 
 		// Forward the token to the auth-service.
+		baseURL := resolveAuthServiceURL()
 		req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet,
-			authServiceURL+"/api/auth/me", nil)
+			baseURL+"/api/auth/me", nil)
 		if err != nil {
 			log.Printf("[doctor-service] could not build auth request: %v", err)
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "auth service unavailable"})

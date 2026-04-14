@@ -3,7 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
-import { Appointment, getAppointments, getConsultationToken, getMe, doctorAcceptAppointment, doctorRejectAppointment } from "@/app/lib/api";
+import {
+  Appointment,
+  MedicalReport,
+  doctorAcceptAppointment,
+  doctorEndConsultation,
+  doctorRejectAppointment,
+  doctorStartConsultation,
+  getAppointments,
+  getConsultationToken,
+  getDoctorPatientReports,
+  getMe,
+} from "@/app/lib/api";
 import { getFirebaseAuth } from "@/app/lib/firebaseClient";
 import { getDashboardPathForRole } from "@/app/lib/roleRouting";
 
@@ -15,6 +26,8 @@ export default function DoctorDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [reportsByAppointment, setReportsByAppointment] = useState<Record<string, MedicalReport[]>>({});
+  const [reportsLoadingId, setReportsLoadingId] = useState<string | null>(null);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -72,11 +85,85 @@ export default function DoctorDashboardPage() {
 
     try {
       const result = await getConsultationToken(id, idToken);
-      setMessage(`Consultation token created: ${result.token.slice(0, 18)}...`);
+      const joinUrl = `https://meet.livekit.io/custom?liveKitUrl=${encodeURIComponent(result.wsUrl)}&token=${encodeURIComponent(result.token)}`;
+      window.open(joinUrl, "_blank", "noopener,noreferrer");
+      setMessage("Consultation room opened in a new tab.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join consultation");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleStartConsultation(id: string) {
+    if (!idToken) {
+      setError("Please sign in again to start the consultation.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const result = await doctorStartConsultation(id, idToken);
+      if (result.meeting_link) {
+        window.open(result.meeting_link, "_blank", "noopener,noreferrer");
+      }
+      setMessage("Consultation started successfully.");
+      const data = await getAppointments(idToken);
+      setAppointments(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start consultation");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleEndConsultation(id: string) {
+    if (!idToken) {
+      setError("Please sign in again to end the consultation.");
+      return;
+    }
+
+    const notes = window.prompt("Consultation notes (optional)") || "";
+    const prescription = window.prompt("Prescription text (optional)") || "";
+
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      await doctorEndConsultation(id, idToken, { notes, prescription });
+      setMessage("Consultation ended successfully.");
+      const data = await getAppointments(idToken);
+      setAppointments(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to end consultation");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleViewReports(id: string) {
+    if (!idToken) {
+      setError("Please sign in again to load patient reports.");
+      return;
+    }
+
+    setReportsLoadingId(id);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const result = await getDoctorPatientReports(id, idToken);
+      const data = Array.isArray(result) ? result : result.data || [];
+      setReportsByAppointment((prev) => ({ ...prev, [id]: data }));
+      setMessage(`Loaded ${data.length} patient report(s).`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load patient reports");
+    } finally {
+      setReportsLoadingId(null);
     }
   }
 
@@ -213,9 +300,20 @@ export default function DoctorDashboardPage() {
                       </div>
                     )}
                     {appointment.status === "BOOKED" && (
-                      <button className="btn-primary text-xs" onClick={() => void handleJoinConsultation(appointment.id)} disabled={loading}>
-                        Join consultation
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button className="btn-primary text-xs" onClick={() => void handleStartConsultation(appointment.id)} disabled={loading}>
+                          Start consultation
+                        </button>
+                        <button className="btn-secondary text-xs" onClick={() => void handleJoinConsultation(appointment.id)} disabled={loading}>
+                          Enter room
+                        </button>
+                        <button className="btn-secondary text-xs" onClick={() => void handleViewReports(appointment.id)} disabled={loading || reportsLoadingId === appointment.id}>
+                          {reportsLoadingId === appointment.id ? "Loading reports..." : "Patient reports"}
+                        </button>
+                        <button className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100" onClick={() => void handleEndConsultation(appointment.id)} disabled={loading}>
+                          End consultation
+                        </button>
+                      </div>
                     )}
                     {appointment.status !== "CONFIRMED" && appointment.status !== "BOOKED" && (
                       <span className="text-xs text-slate-500">{appointment.status === "COMPLETED" ? "Completed" : appointment.status === "REJECTED" ? "Rejected" : "—"}</span>
@@ -226,6 +324,30 @@ export default function DoctorDashboardPage() {
             </tbody>
           </table>
         </div>
+
+        {Object.keys(reportsByAppointment).length > 0 && (
+          <div className="mt-6 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <h3 className="text-sm font-semibold text-slate-900">Patient reports</h3>
+            {Object.entries(reportsByAppointment).map(([appointmentId, reports]) => (
+              <div key={appointmentId} className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="text-xs uppercase tracking-[0.14em] text-slate-500">Appointment {appointmentId}</p>
+                {reports.length === 0 ? (
+                  <p className="mt-2 text-sm text-slate-600">No reports uploaded.</p>
+                ) : (
+                  <ul className="mt-2 space-y-2 text-sm text-slate-700">
+                    {reports.map((report) => (
+                      <li key={report._id} className="rounded-lg bg-slate-50 px-3 py-2">
+                        <p className="font-medium text-slate-900">{report.fileName}</p>
+                        <p className="text-xs text-slate-500">{report.fileType} • {new Date(report.uploadedAt).toLocaleString()}</p>
+                        {report.description && <p className="text-sm text-slate-600">{report.description}</p>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </main>
   );

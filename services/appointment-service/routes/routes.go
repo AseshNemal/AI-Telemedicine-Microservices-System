@@ -45,6 +45,7 @@ func RegisterRoutes(router *gin.Engine, h *handlers.Handler) {
 		// Doctor discovery (any authenticated role may search)
 		auth.GET("/doctors", h.SearchDoctors)
 		auth.GET("/doctors/:id", h.GetDoctorByID)
+		auth.GET("/doctors/:id/schedule-summary", h.GetDoctorScheduleSummary)
 
 		// Appointment creation — patients only
 		auth.POST("/appointments", middleware.RequireRole("PATIENT"), h.CreateAppointment)

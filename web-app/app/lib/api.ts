@@ -1,3 +1,5 @@
+import { resolveServiceBase } from "@/lib/api/baseUrls";
+
 export type Doctor = {
   id: string;
   name: string;
@@ -36,6 +38,43 @@ export type PatientProfile = {
   bloodGroup: "A+" | "A-" | "B+" | "B-" | "AB+" | "AB-" | "O+" | "O-" | null;
   allergies: string[];
   chronicConditions: string[];
+};
+
+export type MedicalReport = {
+  _id: string;
+  patientId: string;
+  fileName: string;
+  fileUrl: string;
+  fileType: string;
+  description: string;
+  uploadedAt: string;
+};
+
+export type PrescriptionMedicine = {
+  name: string;
+  dosage: string;
+  frequency: string;
+  duration: string;
+};
+
+export type Prescription = {
+  _id: string;
+  patientId: string;
+  doctorId: string;
+  appointmentId?: string | null;
+  medicines: PrescriptionMedicine[];
+  notes?: string;
+  issuedAt: string;
+};
+
+export type MedicalHistoryEntry = {
+  _id: string;
+  patientId: string;
+  diagnosis: string;
+  treatment?: string;
+  doctorId: string;
+  consultationDate: string;
+  notes?: string;
 };
 
 export type PaymentCreateRequest = {
@@ -108,18 +147,62 @@ export type TelemedicineRoomResponse = {
   metadata: string;
 };
 
-const doctorBase =
-  process.env.NEXT_PUBLIC_DOCTOR_SERVICE_URL ?? "http://localhost:8082";
-const appointmentBase =
-  process.env.NEXT_PUBLIC_APPOINTMENT_SERVICE_URL ?? "http://localhost:8083";
-const authBase =
-  process.env.NEXT_PUBLIC_AUTH_SERVICE_URL ?? "http://localhost:8081";
-const patientBase =
-  process.env.NEXT_PUBLIC_PATIENT_SERVICE_URL ?? "http://localhost:5002";
-const paymentBase =
-  process.env.NEXT_PUBLIC_PAYMENT_SERVICE_URL ?? "http://localhost:8085";
-const telemedicineBase =
-  process.env.NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL ?? "http://localhost:8086";
+// Availability slot returned from doctor-service GET /doctors/:id/availability
+export type DoctorAvailability = {
+  id: string;
+  doctor_id: string;
+  day_of_week: number; // 0=Sunday
+  start_time: string; // HH:MM
+  end_time: string; // HH:MM
+};
+
+export type DoctorScheduleSummaryDate = {
+  date: string;
+  dayOfWeek: number;
+  totalSlots: number;
+  bookedCount: number;
+  availableSlots: number;
+};
+
+export type DoctorScheduleSummarySlot = {
+  time: string;
+  bookedCount: number;
+  available: boolean;
+};
+
+export type DoctorScheduleSummary = {
+  doctorId: string;
+  from: string;
+  to: string;
+  days: number;
+  dates: DoctorScheduleSummaryDate[];
+  slotsByDate: Record<string, DoctorScheduleSummarySlot[]>;
+};
+
+const doctorBase = resolveServiceBase(
+  process.env.NEXT_PUBLIC_DOCTOR_SERVICE_URL,
+  "",
+);
+const appointmentBase = resolveServiceBase(
+  process.env.NEXT_PUBLIC_APPOINTMENT_SERVICE_URL,
+  "",
+);
+const authBase = resolveServiceBase(
+  process.env.NEXT_PUBLIC_AUTH_SERVICE_URL,
+  "/api/auth",
+);
+const patientBase = resolveServiceBase(
+  process.env.NEXT_PUBLIC_PATIENT_SERVICE_URL,
+  "/api/patients",
+);
+const paymentBase = resolveServiceBase(
+  process.env.NEXT_PUBLIC_PAYMENT_SERVICE_URL,
+  "",
+);
+const telemedicineBase = resolveServiceBase(
+  process.env.NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL,
+  "",
+);
 
 export async function getDoctors(specialty?: string): Promise<Doctor[]> {
   const query = specialty ? `?specialty=${encodeURIComponent(specialty)}` : "";
@@ -127,6 +210,94 @@ export async function getDoctors(specialty?: string): Promise<Doctor[]> {
   if (!res.ok) {
     throw new Error(`Failed to fetch doctors (${res.status})`);
   }
+  return res.json();
+}
+
+export async function getDoctorAvailability(doctorId: string): Promise<DoctorAvailability[]> {
+  const res = await fetch(`${doctorBase}/doctors/${encodeURIComponent(doctorId)}/availability`, {
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to fetch availability (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function getDoctorScheduleSummary(
+  doctorId: string,
+  idToken: string,
+  options?: { from?: string; days?: number }
+): Promise<DoctorScheduleSummary> {
+  const params = new URLSearchParams();
+  if (options?.from) params.set("from", options.from);
+  if (typeof options?.days === "number") params.set("days", String(options.days));
+  const query = params.toString() ? `?${params.toString()}` : "";
+
+  const res = await fetch(`${appointmentBase}/doctors/${encodeURIComponent(doctorId)}/schedule-summary${query}`, {
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to fetch doctor schedule summary (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function getAdminDoctors(
+  idToken: string,
+  verificationStatus?: "PENDING" | "VERIFIED" | "SUSPENDED"
+): Promise<Doctor[]> {
+  const query = verificationStatus ? `?verification_status=${encodeURIComponent(verificationStatus)}` : "";
+  const res = await fetch(`${doctorBase}/admin/doctors${query}`, {
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to fetch admin doctors (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function verifyDoctor(id: string, idToken: string): Promise<Doctor> {
+  const res = await fetch(`${doctorBase}/admin/doctors/${encodeURIComponent(id)}/verify`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to verify doctor (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function suspendDoctor(id: string, idToken: string): Promise<Doctor> {
+  const res = await fetch(`${doctorBase}/admin/doctors/${encodeURIComponent(id)}/suspend`, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to suspend doctor (${res.status})`);
+  }
+
   return res.json();
 }
 
@@ -290,7 +461,67 @@ export async function doctorRejectAppointment(
   return res.json();
 }
 
-export async function getConsultationToken(id: string, idToken: string): Promise<{ token: string }> {
+export async function doctorStartConsultation(
+  appointmentId: string,
+  idToken: string
+): Promise<{ id: string; appointment_id: string; doctor_id: string; patient_id: string; session_id: string; meeting_link: string; status: string }> {
+  const res = await fetch(`${doctorBase}/doctor/appointments/${encodeURIComponent(appointmentId)}/consultation/start`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to start consultation (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function doctorEndConsultation(
+  appointmentId: string,
+  idToken: string,
+  payload: { notes?: string; prescription?: string; medications?: Array<{ name: string; dosage: string; duration: string }> } = {}
+): Promise<{ id: string; appointment_id: string; doctor_id: string; patient_id: string; session_id: string; meeting_link: string; status: string }> {
+  const res = await fetch(`${doctorBase}/doctor/appointments/${encodeURIComponent(appointmentId)}/consultation/end`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to end consultation (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function getDoctorPatientReports(
+  appointmentId: string,
+  idToken: string
+): Promise<{ success?: boolean; data?: MedicalReport[] } | MedicalReport[]> {
+  const res = await fetch(`${doctorBase}/doctor/appointments/${encodeURIComponent(appointmentId)}/patient-reports`, {
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to load patient reports (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function getConsultationToken(id: string, idToken: string): Promise<{ token: string; wsUrl: string; roomName?: string }> {
   const res = await fetch(`${appointmentBase}/appointments/${encodeURIComponent(id)}/consultation-token`, {
     cache: "no-store",
     headers: {
@@ -378,7 +609,7 @@ export async function getMe(idToken: string) {
 }
 
 export async function getMyPatientProfile(idToken: string): Promise<{ success: boolean; data: PatientProfile }> {
-  const res = await fetch(`${patientBase}/api/patients/me`, {
+  const res = await fetch(`${patientBase}/me`, {
     method: "GET",
     headers: {
       Authorization: `Bearer ${idToken}`,
@@ -406,7 +637,7 @@ export async function updateMyPatientProfile(
     chronicConditions: string[];
   }>
 ): Promise<{ success: boolean; data: PatientProfile; message: string }> {
-  const res = await fetch(`${patientBase}/api/patients/me`, {
+  const res = await fetch(`${patientBase}/me`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -418,6 +649,105 @@ export async function updateMyPatientProfile(
   if (!res.ok) {
     const message = await safeMessage(res);
     throw new Error(message || `Failed to update patient profile (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function getMyMedicalReports(
+  idToken: string
+): Promise<{ success: boolean; data: MedicalReport[] }> {
+  const res = await fetch(`${patientBase}/me/reports`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to load medical reports (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function uploadMyMedicalReport(
+  idToken: string,
+  payload: { file: File; description?: string }
+): Promise<{ success: boolean; data: MedicalReport; message: string }> {
+  const formData = new FormData();
+  formData.append("file", payload.file);
+  if (payload.description) {
+    formData.append("description", payload.description);
+  }
+
+  const res = await fetch(`${patientBase}/me/reports`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to upload report (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function deleteMyMedicalReport(idToken: string, reportId: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${patientBase}/me/reports/${encodeURIComponent(reportId)}`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to delete report (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function getMyPrescriptions(
+  idToken: string
+): Promise<{ success: boolean; data: Prescription[] }> {
+  const res = await fetch(`${patientBase}/me/prescriptions`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to load prescriptions (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function getMyMedicalHistory(
+  idToken: string
+): Promise<{ success: boolean; data: MedicalHistoryEntry[] }> {
+  const res = await fetch(`${patientBase}/me/history`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to load medical history (${res.status})`);
   }
 
   return res.json();

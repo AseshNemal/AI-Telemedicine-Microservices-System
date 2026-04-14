@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, FormEvent } from "react";
+import { useCallback, useEffect, useState, FormEvent } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import {
   Appointment,
@@ -31,7 +31,7 @@ export default function AppointmentManagement() {
   const [rescheduleReason, setRescheduleReason] = useState("");
 
   // Load appointments
-  async function loadAppointments(tokenOverride?: string) {
+  const loadAppointments = useCallback(async (tokenOverride?: string) => {
     const token = tokenOverride || idToken;
     if (!token) {
       setLoading(false);
@@ -51,7 +51,7 @@ export default function AppointmentManagement() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [idToken]);
 
   // Handle reschedule
   async function handleReschedule(e: FormEvent) {
@@ -203,7 +203,7 @@ export default function AppointmentManagement() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [loadAppointments]);
 
   // Format date/time for display
   function formatDateTime(date: string, time: string) {

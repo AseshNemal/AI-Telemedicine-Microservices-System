@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { Appointment, createAppointment, getAppointments } from "@/app/lib/api";
 import { getFirebaseAuth } from "@/app/lib/firebaseClient";
@@ -22,7 +22,7 @@ export default function AppointmentConsole({ initialAppointments }: AppointmentC
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function load(token?: string) {
+  const load = useCallback(async (token?: string) => {
     const authToken = token || idToken;
     if (!authToken) {
       setError("Please login first to access appointments.");
@@ -34,7 +34,8 @@ export default function AppointmentConsole({ initialAppointments }: AppointmentC
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load appointments");
     }
-  }
+  }, [idToken]);
+
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
@@ -77,7 +78,7 @@ export default function AppointmentConsole({ initialAppointments }: AppointmentC
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [load]);
 
   return (
     <section className="space-y-6">

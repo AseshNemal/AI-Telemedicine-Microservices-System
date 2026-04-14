@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 
 export type VoiceState = 'idle' | 'listening' | 'processing' | 'speaking';
 
@@ -40,6 +40,50 @@ const INTERRUPT_THRESHOLD = 0.18;
 const INTERRUPT_HOLD_MS = 350;
 const MIN_SPEAK_BEFORE_INTERRUPT_MS = 1200;
 
+type SpeechRecognitionAlternativeLike = {
+  transcript: string;
+};
+
+type SpeechRecognitionResultLike = {
+  isFinal: boolean;
+  length: number;
+  [index: number]: SpeechRecognitionAlternativeLike;
+};
+
+type SpeechRecognitionResultListLike = {
+  length: number;
+  [index: number]: SpeechRecognitionResultLike;
+};
+
+type SpeechRecognitionEventLike = {
+  resultIndex: number;
+  results: SpeechRecognitionResultListLike;
+};
+
+type SpeechRecognitionErrorEventLike = {
+  error: string;
+};
+
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: (() => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
+type WindowWithSpeechAPIs = Window & {
+  SpeechRecognition?: SpeechRecognitionConstructor;
+  webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  webkitAudioContext?: typeof AudioContext;
+};
+
 function truncateAtSentenceBoundary(message: string, maxChars: number): string {
   if (message.length <= maxChars) return message;
 
@@ -70,12 +114,11 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
   const [error, setError] = useState<string | null>(null);
   const [lastMessage, setLastMessage] = useState('');
 
-  const recognitionRef = useRef<any>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const dataArrayRef = useRef<Uint8Array | null>(null);
+  const dataArrayRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const silenceStartRef = useRef<number | null>(null);
-  const synthRef = useRef<SpeechSynthesisUtterance | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const ttsPulseRef = useRef(0);
   const interruptStartRef = useRef<number | null>(null);
@@ -93,13 +136,15 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
 
   // Initialize Speech Recognition
   useEffect(() => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
+    const speechWindow = window as WindowWithSpeechAPIs;
+    const SpeechRecognitionCtor =
+      speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
       setError('Speech Recognition not supported');
       return;
     }
 
-    recognitionRef.current = new SpeechRecognition();
+    recognitionRef.current = new SpeechRecognitionCtor();
     const recognition = recognitionRef.current;
 
     recognition.continuous = true;
@@ -110,16 +155,17 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
       setError(null);
     };
 
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEventLike) => {
       let interim = '';
       let final = '';
 
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          final += transcript + ' ';
+        const result = event.results[i];
+        const currentTranscript = result?.[0]?.transcript ?? '';
+        if (result?.isFinal) {
+          final += `${currentTranscript} `;
         } else {
-          interim += transcript;
+          interim += currentTranscript;
         }
       }
 
@@ -128,11 +174,11 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
         silenceStartRef.current = Date.now();
       }
       if (interim) {
-        setTranscript(prev => (final ? final : interim));
+        setTranscript(final || interim);
       }
     };
 
-    recognition.onerror = (event: any) => {
+    recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
       setError(`Recognition error: ${event.error}`);
       setState('idle');
       setIsListening(false);
@@ -159,88 +205,37 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
     };
   }, []);
 
-  // Amplitude monitoring loop
-  useEffect(() => {
-    if (!isListening || !analyserRef.current) return;
+  const speakMessage = useCallback((message: string) => {
+    setState('speaking');
+    speakingStartedAtRef.current = Date.now();
 
-    const monitor = () => {
-      if (!analyserRef.current) return;
+    const utterance = new SpeechSynthesisUtterance(message);
+    utterance.rate = 0.95;
+    utterance.pitch = 1;
+    utterance.volume = 0.8;
 
-      const dataArray = dataArrayRef.current!;
-      analyserRef.current.getByteFrequencyData(dataArray as any);
-
-      let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i];
-      }
-      const avg = sum / dataArray.length / 255;
-
-      // Add TTS pulse contribution if speaking
-      const combinedAmplitude = state === 'speaking'
-        ? Math.max(avg, ttsPulseRef.current)
-        : avg;
-
-      // Throttle UI updates to reduce re-render pressure on lower-end laptops.
-      const now = performance.now();
-      const shouldPushUi = now - lastUiUpdateRef.current >= 120; // ~8 FPS for laptop-friendly rendering
-      if (shouldPushUi) {
-        const smoothed = lastAmplitudeRef.current * 0.65 + combinedAmplitude * 0.35;
-        if (Math.abs(smoothed - lastAmplitudeRef.current) >= 0.01 || smoothed < 0.01) {
-          setAmplitude(smoothed);
-          lastAmplitudeRef.current = smoothed;
-        }
-        lastUiUpdateRef.current = now;
-      }
-
-      // Interrupt detection: if speaking and user speaks
-      if (state === 'speaking' && combinedAmplitude > INTERRUPT_THRESHOLD) {
-        const canInterrupt =
-          speakingStartedAtRef.current !== null &&
-          Date.now() - speakingStartedAtRef.current > MIN_SPEAK_BEFORE_INTERRUPT_MS;
-
-        if (canInterrupt) {
-          if (!interruptStartRef.current) {
-            interruptStartRef.current = Date.now();
-          } else if (Date.now() - interruptStartRef.current > INTERRUPT_HOLD_MS) {
-            // Cancel TTS only on sustained, strong interrupt signal.
-            window.speechSynthesis.cancel();
-            setState('listening');
-            interruptStartRef.current = null;
-          }
-        }
-      } else {
-        interruptStartRef.current = null;
-      }
-
-      // Silence detection for silence-based state transitions
-      if (state === 'listening' && combinedAmplitude < SILENCE_THRESHOLD) {
-        if (!silenceStartRef.current) {
-          silenceStartRef.current = Date.now();
-        } else if (Date.now() - silenceStartRef.current > SILENCE_MS) {
-          if (transcript.trim()) {
-            handleSendMessage(transcript);
-            setTranscript('');
-            setState('processing');
-          }
-          silenceStartRef.current = null;
-        }
-      } else if (combinedAmplitude > START_THRESHOLD) {
-        silenceStartRef.current = null;
-        if (state === 'idle') {
-          setState('listening');
-        }
-      }
-
-      animationFrameRef.current = requestAnimationFrame(monitor);
+    utterance.onboundary = () => {
+      // Update TTS pulse on word boundary for animation
+      ttsPulseRef.current = 0.15;
+      setTimeout(() => {
+        ttsPulseRef.current = 0;
+      }, 100);
     };
 
-    animationFrameRef.current = requestAnimationFrame(monitor);
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
+    utterance.onend = () => {
+      setState('listening');
+      ttsPulseRef.current = 0;
+      speakingStartedAtRef.current = null;
     };
-  }, [isListening, state, transcript]);
+
+    utterance.onerror = () => {
+      setState('idle');
+      ttsPulseRef.current = 0;
+      speakingStartedAtRef.current = null;
+    };
+
+    window.speechSynthesis.speak(utterance);
+  }, []);
 
   const handleSendMessage = useCallback(async (msg: string) => {
     if (!msg.trim()) return;
@@ -293,40 +288,90 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
       setError(err instanceof Error ? err.message : 'Error sending message');
       setState('idle');
     }
-  }, []);
+  }, [speakMessage]);
 
-  const speakMessage = useCallback((message: string) => {
-    setState('speaking');
-    speakingStartedAtRef.current = Date.now();
+  // Amplitude monitoring loop
+  useEffect(() => {
+    if (!isListening || !analyserRef.current) return;
 
-    const utterance = new SpeechSynthesisUtterance(message);
-    utterance.rate = 0.95;
-    utterance.pitch = 1;
-    utterance.volume = 0.8;
+    const monitor = () => {
+      if (!analyserRef.current) return;
 
-    utterance.onboundary = () => {
-      // Update TTS pulse on word boundary for animation
-      ttsPulseRef.current = 0.15;
-      setTimeout(() => {
-        ttsPulseRef.current = 0;
-      }, 100);
+      const dataArray = dataArrayRef.current!;
+      analyserRef.current.getByteFrequencyData(dataArray);
+
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const avg = sum / dataArray.length / 255;
+
+      // Add TTS pulse contribution if speaking
+      const combinedAmplitude = state === 'speaking'
+        ? Math.max(avg, ttsPulseRef.current)
+        : avg;
+
+      // Throttle UI updates to reduce re-render pressure on lower-end laptops.
+      const now = performance.now();
+      const shouldPushUi = now - lastUiUpdateRef.current >= 120; // ~8 FPS for laptop-friendly rendering
+      if (shouldPushUi) {
+        const smoothed = lastAmplitudeRef.current * 0.65 + combinedAmplitude * 0.35;
+        if (Math.abs(smoothed - lastAmplitudeRef.current) >= 0.01 || smoothed < 0.01) {
+          setAmplitude(smoothed);
+          lastAmplitudeRef.current = smoothed;
+        }
+        lastUiUpdateRef.current = now;
+      }
+
+      // Interrupt detection: if speaking and user speaks
+      if (state === 'speaking' && combinedAmplitude > INTERRUPT_THRESHOLD) {
+        const canInterrupt =
+          speakingStartedAtRef.current !== null &&
+          Date.now() - speakingStartedAtRef.current > MIN_SPEAK_BEFORE_INTERRUPT_MS;
+
+        if (canInterrupt) {
+          if (!interruptStartRef.current) {
+            interruptStartRef.current = Date.now();
+          } else if (Date.now() - interruptStartRef.current > INTERRUPT_HOLD_MS) {
+            // Cancel TTS only on sustained, strong interrupt signal.
+            window.speechSynthesis.cancel();
+            setState('listening');
+            interruptStartRef.current = null;
+          }
+        }
+      } else {
+        interruptStartRef.current = null;
+      }
+
+      // Silence detection for silence-based state transitions
+      if (state === 'listening' && combinedAmplitude < SILENCE_THRESHOLD) {
+        if (!silenceStartRef.current) {
+          silenceStartRef.current = Date.now();
+        } else if (Date.now() - silenceStartRef.current > SILENCE_MS) {
+          if (transcript.trim()) {
+            void handleSendMessage(transcript);
+            setTranscript('');
+            setState('processing');
+          }
+          silenceStartRef.current = null;
+        }
+      } else if (combinedAmplitude > START_THRESHOLD) {
+        silenceStartRef.current = null;
+        if (state === 'idle') {
+          setState('listening');
+        }
+      }
+
+      animationFrameRef.current = requestAnimationFrame(monitor);
     };
 
-    utterance.onend = () => {
-      setState('listening');
-      ttsPulseRef.current = 0;
-      speakingStartedAtRef.current = null;
+    animationFrameRef.current = requestAnimationFrame(monitor);
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
     };
-
-    utterance.onerror = () => {
-      setState('idle');
-      ttsPulseRef.current = 0;
-      speakingStartedAtRef.current = null;
-    };
-
-    synthRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
-  }, []);
+  }, [handleSendMessage, isListening, state, transcript]);
 
   const startListening = useCallback(async () => {
     try {
@@ -337,7 +382,14 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
       contextRef.current = {};
 
       // Setup Web Audio API for amplitude monitoring
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const speechWindow = window as WindowWithSpeechAPIs;
+      const AudioContextConstructor =
+        window.AudioContext || speechWindow.webkitAudioContext;
+      if (!AudioContextConstructor) {
+        throw new Error('Web Audio API not supported');
+      }
+
+      const audioContext = new AudioContextConstructor();
       audioContextRef.current = audioContext;
       const analyser = audioContext.createAnalyser();
       const source = audioContext.createMediaStreamSource(stream);
@@ -346,7 +398,7 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
       analyser.fftSize = 256;
 
       analyserRef.current = analyser;
-      dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount) as Uint8Array<ArrayBuffer>;
+      dataArrayRef.current = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount));
 
       setIsListening(true);
       setState('idle');

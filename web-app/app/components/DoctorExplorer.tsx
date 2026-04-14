@@ -23,7 +23,11 @@ export default function DoctorExplorer() {
   }
 
   function doctorKey(doctor: Doctor, index: number) {
-    return doctor.id || `${doctor.name}-${doctor.specialty}-${index}`;
+    const id = (doctor && typeof doctor.id === "string" && doctor.id.trim()) || null;
+    if (id) return `doctor-${id}`;
+    const name = (doctor?.name || "unknown").replace(/\s+/g, "_");
+    const spec = (doctor?.specialty || "unspecified").replace(/\s+/g, "_");
+    return `doctor-${name}-${spec}-${index}`;
   }
 
   useEffect(() => {

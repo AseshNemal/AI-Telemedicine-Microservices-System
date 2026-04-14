@@ -3,15 +3,11 @@ const axios = require('axios');
 const getCandidatePatientServiceBaseUrls = () => {
     const patientServiceUrl = process.env.PATIENT_SERVICE_URL;
 
-    if (!patientServiceUrl) {
-        throw new Error('PATIENT_SERVICE_URL is not configured');
-    }
-
-    const baseUrls = [patientServiceUrl.replace(/\/$/, '')];
+    const baseUrls = [patientServiceUrl ? patientServiceUrl.replace(/\/$/, '') : 'http://localhost:5002'];
     const port = process.env.PATIENT_PORT || '5002';
 
     // Local runs often keep docker-style PATIENT_SERVICE_URL in .env; try localhost fallbacks automatically.
-    if (patientServiceUrl.includes('patient-service')) {
+    if (patientServiceUrl && patientServiceUrl.includes('patient-service')) {
         baseUrls.push(`http://localhost:${port}`, `http://127.0.0.1:${port}`);
     }
 

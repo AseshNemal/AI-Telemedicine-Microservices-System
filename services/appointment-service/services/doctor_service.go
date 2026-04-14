@@ -39,6 +39,15 @@ type Doctor struct {
 	VerificationStatus   string `json:"verification_status"`
 }
 
+// DoctorAvailability represents one weekly availability block for a doctor.
+type DoctorAvailability struct {
+	ID        string `json:"id"`
+	DoctorID  string `json:"doctor_id"`
+	DayOfWeek int    `json:"day_of_week"`
+	StartTime string `json:"start_time"`
+	EndTime   string `json:"end_time"`
+}
+
 type availabilityRequest struct {
 	DoctorID string `json:"doctorId"`
 	Date     string `json:"date"`
@@ -142,4 +151,31 @@ func (s *DoctorService) GetDoctorByID(doctorID string) (*Doctor, error) {
 	}
 
 	return &doctor, nil
+}
+
+// GetDoctorAvailability calls GET /doctors/:id/availability on the doctor service.
+func (s *DoctorService) GetDoctorAvailability(doctorID string) ([]DoctorAvailability, error) {
+	resp, err := s.httpClient.Get(s.baseURL + "/doctors/" + url.PathEscape(doctorID) + "/availability")
+	if err != nil {
+		return nil, fmt.Errorf("doctor-service unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%w: %s", ErrDoctorNotFound, doctorID)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("doctor-service returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var rows []DoctorAvailability
+	if err := json.NewDecoder(resp.Body).Decode(&rows); err != nil {
+		return nil, fmt.Errorf("doctor-service bad response body: %w", err)
+	}
+	if rows == nil {
+		rows = []DoctorAvailability{}
+	}
+
+	return rows, nil
 }

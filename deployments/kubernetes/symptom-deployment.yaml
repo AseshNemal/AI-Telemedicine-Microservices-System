@@ -4,7 +4,7 @@ metadata:
   name: symptom-service
   namespace: default
 spec:
-  replicas: 2
+  replicas: 1
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -54,11 +54,11 @@ spec:
 
           resources:
             requests:
-              memory: "256Mi"
-              cpu: "250m"
+              memory: "192Mi"
+              cpu: "150m"
             limits:
-              memory: "512Mi"
-              cpu: "1000m"
+              memory: "384Mi"
+              cpu: "600m"
 
           livenessProbe:
             httpGet:

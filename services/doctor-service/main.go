@@ -5,6 +5,7 @@ import (
 	"doctor-service/handlers"
 	"doctor-service/routes"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 
@@ -31,8 +32,17 @@ func main() {
 	router := gin.Default()
 
 	// CORS: allow the frontend (localhost:3000) and common local origins
+	allowedOrigins := map[string]struct{}{
+		"http://localhost:3000": {},
+		"http://127.0.0.1:3000": {},
+		"http://localhost":      {},
+		"http://127.0.0.1":      {},
+		"http://localhost:8080": {},
+		"http://127.0.0.1:8080": {},
+	}
+
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "http://127.0.0.1:3000"},
+		AllowOrigins:     []string{"http://localhost:3000", "http://127.0.0.1:3000", "http://localhost", "http://127.0.0.1", "http://localhost:8080", "http://127.0.0.1:8080"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -41,10 +51,13 @@ func main() {
 
 	// Fallback header middleware to ensure CORS header appears for simple responses
 	router.Use(func(c *gin.Context) {
-		c.Header("Access-Control-Allow-Origin", "http://localhost:3000")
+		origin := c.Request.Header.Get("Origin")
+		if _, ok := allowedOrigins[origin]; ok {
+			c.Header("Access-Control-Allow-Origin", origin)
+		}
 		c.Header("Access-Control-Allow-Credentials", "true")
 		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
+			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
 		c.Next()

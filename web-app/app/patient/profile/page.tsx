@@ -4,8 +4,16 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
 import {
+  deleteMyMedicalReport,
+  getMyMedicalHistory,
+  getMyMedicalReports,
   getMyPatientProfile,
+  getMyPrescriptions,
+  MedicalHistoryEntry,
+  MedicalReport,
   PatientProfile,
+  Prescription,
+  uploadMyMedicalReport,
   updateMyPatientProfile,
 } from "@/app/lib/api";
 import { getFirebaseAuth } from "@/app/lib/firebaseClient";
@@ -56,6 +64,13 @@ export default function PatientProfilePage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reports, setReports] = useState<MedicalReport[]>([]);
+  const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const [historyEntries, setHistoryEntries] = useState<MedicalHistoryEntry[]>([]);
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [uploadingReport, setUploadingReport] = useState(false);
+  const [reportDescription, setReportDescription] = useState("");
+  const [selectedReportFile, setSelectedReportFile] = useState<File | null>(null);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
@@ -76,9 +91,20 @@ export default function PatientProfilePage() {
         const result = await getMyPatientProfile(token);
         setProfile(result.data);
         setForm(mapProfileToForm(result.data));
+
+        setRecordsLoading(true);
+        const [reportsResult, prescriptionsResult, historyResult] = await Promise.all([
+          getMyMedicalReports(token),
+          getMyPrescriptions(token),
+          getMyMedicalHistory(token),
+        ]);
+        setReports(reportsResult.data || []);
+        setPrescriptions(prescriptionsResult.data || []);
+        setHistoryEntries(historyResult.data || []);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load profile");
       } finally {
+        setRecordsLoading(false);
         setLoading(false);
       }
     });
@@ -117,6 +143,63 @@ export default function PatientProfilePage() {
       setError(err instanceof Error ? err.message : "Failed to update profile");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function onUploadReport(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!idToken) {
+      setError("You must be signed in to upload reports.");
+      return;
+    }
+    if (!selectedReportFile) {
+      setError("Please choose a file first.");
+      return;
+    }
+
+    setUploadingReport(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const result = await uploadMyMedicalReport(idToken, {
+        file: selectedReportFile,
+        description: reportDescription,
+      });
+      setReports((prev) => [result.data, ...prev]);
+      setSelectedReportFile(null);
+      setReportDescription("");
+      setMessage("Medical report uploaded successfully.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload report");
+    } finally {
+      setUploadingReport(false);
+    }
+  }
+
+  async function onDeleteReport(reportId: string) {
+    if (!idToken) {
+      setError("You must be signed in to delete reports.");
+      return;
+    }
+
+    setError(null);
+    setMessage(null);
+
+    try {
+      await deleteMyMedicalReport(idToken, reportId);
+      setReports((prev) => prev.filter((r) => r._id !== reportId));
+      setMessage("Medical report deleted successfully.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete report");
+    }
+  }
+
+  function resolveReportUrl(fileUrl: string) {
+    try {
+      return new URL(fileUrl, process.env.NEXT_PUBLIC_PATIENT_SERVICE_URL || "http://localhost:5002").toString();
+    } catch {
+      return fileUrl;
     }
   }
 
@@ -261,6 +344,102 @@ export default function PatientProfilePage() {
         {message && <p className="mt-4 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p>}
         {error && <p className="mt-4 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
       </div>
+
+      <section className="mt-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+        <h2 className="text-xl font-bold text-slate-900">Medical reports</h2>
+        <p className="mt-1 text-sm text-slate-600">Upload PDF/JPG/PNG reports and manage your files.</p>
+
+        <form onSubmit={onUploadReport} className="mt-4 grid gap-3 md:grid-cols-3">
+          <input
+            type="file"
+            accept=".pdf,image/png,image/jpeg"
+            className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            onChange={(e) => setSelectedReportFile(e.target.files?.[0] || null)}
+          />
+          <input
+            value={reportDescription}
+            onChange={(e) => setReportDescription(e.target.value)}
+            placeholder="Description (optional)"
+            className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+          />
+          <button
+            type="submit"
+            disabled={uploadingReport || !selectedReportFile}
+            className="h-10 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {uploadingReport ? "Uploading..." : "Upload report"}
+          </button>
+        </form>
+
+        <div className="mt-4 space-y-3">
+          {recordsLoading && <p className="text-sm text-slate-600">Loading reports...</p>}
+          {!recordsLoading && reports.length === 0 && <p className="text-sm text-slate-500">No reports uploaded yet.</p>}
+          {reports.map((report) => (
+            <div key={report._id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-3">
+              <div>
+                <p className="text-sm font-medium text-slate-900">{report.fileName}</p>
+                <p className="text-xs text-slate-500">{new Date(report.uploadedAt).toLocaleString()}</p>
+                {report.description && <p className="text-sm text-slate-600">{report.description}</p>}
+              </div>
+              <div className="flex gap-2">
+                <a
+                  href={resolveReportUrl(report.fileUrl)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg border border-slate-300 px-3 py-1 text-sm text-slate-700"
+                >
+                  View
+                </a>
+                <button
+                  type="button"
+                  onClick={() => onDeleteReport(report._id)}
+                  className="rounded-lg border border-rose-200 px-3 py-1 text-sm text-rose-700"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-8 grid gap-6 md:grid-cols-2">
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-xl font-bold text-slate-900">Prescriptions</h2>
+          <div className="mt-4 space-y-3">
+            {recordsLoading && <p className="text-sm text-slate-600">Loading prescriptions...</p>}
+            {!recordsLoading && prescriptions.length === 0 && <p className="text-sm text-slate-500">No prescriptions found.</p>}
+            {prescriptions.map((p) => (
+              <div key={p._id} className="rounded-xl border border-slate-200 p-3">
+                <p className="text-sm font-semibold text-slate-900">Doctor: {p.doctorId}</p>
+                <p className="text-xs text-slate-500">Issued: {new Date(p.issuedAt).toLocaleDateString()}</p>
+                <ul className="mt-2 list-disc pl-5 text-sm text-slate-700">
+                  {(p.medicines || []).map((m, idx) => (
+                    <li key={`${p._id}-${idx}`}>{m.name} — {m.dosage}, {m.frequency}, {m.duration}</li>
+                  ))}
+                </ul>
+                {p.notes && <p className="mt-2 text-sm text-slate-600">Notes: {p.notes}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-xl font-bold text-slate-900">Medical history</h2>
+          <div className="mt-4 space-y-3">
+            {recordsLoading && <p className="text-sm text-slate-600">Loading history...</p>}
+            {!recordsLoading && historyEntries.length === 0 && <p className="text-sm text-slate-500">No medical history found.</p>}
+            {historyEntries.map((entry) => (
+              <div key={entry._id} className="rounded-xl border border-slate-200 p-3">
+                <p className="text-sm font-semibold text-slate-900">Diagnosis: {entry.diagnosis}</p>
+                <p className="text-sm text-slate-700">Treatment: {entry.treatment}</p>
+                <p className="text-xs text-slate-500">Doctor: {entry.doctorId} • {new Date(entry.consultationDate).toLocaleDateString()}</p>
+                {entry.notes && <p className="mt-1 text-sm text-slate-600">Notes: {entry.notes}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
     </main>
   );
 }

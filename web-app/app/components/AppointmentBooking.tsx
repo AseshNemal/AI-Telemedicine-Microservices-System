@@ -7,6 +7,9 @@ import {
   getDoctors,
   createAppointment,
   getMyPatientProfile,
+  getDoctorScheduleSummary,
+  DoctorScheduleSummary,
+  DoctorScheduleSummarySlot,
 } from "@/app/lib/api";
 import { getFirebaseAuth } from "@/app/lib/firebaseClient";
 
@@ -28,6 +31,10 @@ export default function AppointmentBooking() {
   // Booking form state
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
+  const [availableSlots, setAvailableSlots] = useState<DoctorScheduleSummarySlot[]>([]);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [scheduleSummary, setScheduleSummary] = useState<DoctorScheduleSummary | null>(null);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
 
   // Platform fee is $20 (2000 cents). Doctor fee comes from API.
   const PLATFORM_FEE_CENTS = 2000;
@@ -61,14 +68,74 @@ export default function AppointmentBooking() {
   }
 
   function doctorKey(doctor: Doctor, index: number) {
-    return doctor.id || `${doctor.name}-${doctor.specialty}-${index}`;
+    const id = (doctor && typeof doctor.id === "string" && doctor.id.trim()) || null;
+    if (id) return `doctor-${id}`;
+    const name = (doctor?.name || "unknown").replace(/\s+/g, "_");
+    const spec = (doctor?.specialty || "unspecified").replace(/\s+/g, "_");
+    return `doctor-${name}-${spec}-${index}`;
   }
 
   // Select doctor and move to booking
   function selectDoctor(doctor: Doctor) {
     setSelectedDoctor(doctor);
+    setDate("");
+    setTime("");
+    setSelectedSlot(null);
+    setAvailableSlots([]);
+    setScheduleSummary(null);
     setStep("booking");
   }
+
+  // Load real booking-aware schedule summary when doctor selection changes.
+  useEffect(() => {
+    let alive = true;
+    setDate("");
+    setTime("");
+    setSelectedSlot(null);
+    setAvailableSlots([]);
+    setScheduleSummary(null);
+
+    if (!selectedDoctor || !idToken) return () => {
+      alive = false;
+    };
+
+    (async () => {
+      setScheduleLoading(true);
+      try {
+        const summary = await getDoctorScheduleSummary(selectedDoctor.id, idToken, { days: 45 });
+        if (!alive) return;
+        setScheduleSummary(summary);
+
+        const firstDateWithAvailability = (summary.dates || []).find((d) => d.availableSlots > 0);
+        if (firstDateWithAvailability) {
+          setDate(firstDateWithAvailability.date);
+        }
+      } catch (err) {
+        if (!alive) return;
+        setError(err instanceof Error ? err.message : "Failed to load doctor schedule");
+      } finally {
+        if (alive) setScheduleLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [selectedDoctor, idToken]);
+
+  // When date changes, load available slot options for that date from schedule summary.
+  useEffect(() => {
+    setSelectedSlot(null);
+    setTime("");
+
+    if (!date || !scheduleSummary?.slotsByDate) {
+      setAvailableSlots([]);
+      return;
+    }
+
+    const slots = scheduleSummary.slotsByDate[date] || [];
+    setAvailableSlots(slots);
+  }, [date, scheduleSummary]);
 
   // Handle appointment booking
   async function handleBookAppointment(e: FormEvent) {
@@ -247,6 +314,11 @@ export default function AppointmentBooking() {
               onClick={() => {
                 setSelectedDoctor(null);
                 setStep("doctors");
+                setScheduleSummary(null);
+                setAvailableSlots([]);
+                setSelectedSlot(null);
+                setDate("");
+                setTime("");
               }}
             >
               Change doctor
@@ -282,27 +354,91 @@ export default function AppointmentBooking() {
                 value={patientPhone}
                 onChange={(e) => setPatientPhone(e.target.value)}
               />
-              <input
-                type="date"
-                className="field-input"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                min={todayStr}
-                max={maxDateStr}
-                required
-              />
-              <input
-                type="time"
-                className="field-input"
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-                step="900"
-                required
-              />
+
+              {/* Date selection from real booking-aware schedule summary */}
+              {scheduleSummary && scheduleSummary.dates.length > 0 ? (
+                <select
+                  className="field-input"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  required
+                >
+                  <option value="">Select available date</option>
+                  {scheduleSummary.dates.map((d) => {
+                    const dt = new Date(`${d.date}T00:00:00Z`);
+                    const dayLabel = dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+                    const label = `${dayLabel} • ${d.availableSlots}/${d.totalSlots} free • ${d.bookedCount} booked`;
+                    return (
+                      <option key={d.date} value={d.date} disabled={d.availableSlots <= 0}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
+              ) : (
+                <input
+                  type="date"
+                  className="field-input"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  min={todayStr}
+                  max={maxDateStr}
+                  required
+                />
+              )}
+
+              {/* Slot selection after date selection */}
+              {availableSlots.length > 0 ? (
+                <select
+                  className="field-input"
+                  value={selectedSlot ?? ""}
+                  onChange={(e) => {
+                    setSelectedSlot(e.target.value || null);
+                    setTime(e.target.value);
+                  }}
+                  required
+                >
+                  <option value="">Select a time</option>
+                  {availableSlots.map((slot) => (
+                    <option
+                      key={slot.time}
+                      value={slot.time}
+                      disabled={!slot.available}
+                    >
+                      {slot.time} ({slot.bookedCount} booking{slot.bookedCount === 1 ? "" : "s"})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="time"
+                  className="field-input"
+                  value={time}
+                  onChange={(e) => setTime(e.target.value)}
+                  step="900"
+                  required
+                />
+              )}
               <div></div>
               <button className="btn-primary md:col-span-2" type="submit" disabled={loading}>
                 {loading ? "Booking..." : "Confirm appointment"}
               </button>
+
+              {scheduleLoading && (
+                <p className="md:col-span-2 text-xs text-slate-500">Loading real doctor availability...</p>
+              )}
+              {!scheduleLoading && scheduleSummary && scheduleSummary.dates.length === 0 && (
+                <p className="md:col-span-2 text-xs text-amber-700">No available dates published by this doctor yet.</p>
+              )}
+              {!scheduleLoading && date && scheduleSummary && (
+                <p className="md:col-span-2 text-xs text-slate-500">
+                  {(() => {
+                    const picked = scheduleSummary.dates.find((d) => d.date === date);
+                    if (!picked) return "";
+                    return `For ${date}: ${picked.bookedCount} booking(s), ${picked.availableSlots} slot(s) available.`;
+                  })()}
+                </p>
+              )}
             </div>
           </form>
 
