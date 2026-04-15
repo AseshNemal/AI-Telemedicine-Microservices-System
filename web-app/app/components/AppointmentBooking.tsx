@@ -34,6 +34,8 @@ export default function AppointmentBooking() {
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [scheduleSummary, setScheduleSummary] = useState<DoctorScheduleSummary | null>(null);
   const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [appointmentType, setAppointmentType] = useState<"PHYSICAL" | "VIRTUAL">("VIRTUAL");
+  const [hospitalName, setHospitalName] = useState("");
 
   // Platform fee is $20 (2000 cents). Doctor fee comes from API.
   const PLATFORM_FEE_CENTS = 2000;
@@ -82,6 +84,8 @@ export default function AppointmentBooking() {
     setSelectedSlot(null);
     setAvailableSlots([]);
     setScheduleSummary(null);
+    setAppointmentType("VIRTUAL");
+    setHospitalName(doctor.hospital || "");
     setStep("booking");
   }
 
@@ -123,6 +127,7 @@ export default function AppointmentBooking() {
   }, [selectedDoctor, idToken]);
 
   // When date changes, load available slot options for that date from schedule summary.
+  // Also auto-populate hospital name from first available slot for that date.
   useEffect(() => {
     setSelectedSlot(null);
     setTime("");
@@ -134,7 +139,48 @@ export default function AppointmentBooking() {
 
     const slots = scheduleSummary.slotsByDate[date] || [];
     setAvailableSlots(slots);
-  }, [date, scheduleSummary]);
+
+    // Auto-populate hospital from first available slot for physical appointments
+    if (appointmentType === "PHYSICAL" && slots.length > 0) {
+      const firstPhysicalSlot = slots.find(
+        (s) => s.available && (s.appointmentType === "PHYSICAL" || s.appointmentType === "BOTH")
+      );
+      if (firstPhysicalSlot?.hospitalName) {
+        setHospitalName(firstPhysicalSlot.hospitalName);
+      }
+    }
+  }, [date, scheduleSummary, appointmentType]);
+
+  useEffect(() => {
+    if (!date || !scheduleSummary?.slotsByDate) {
+      return;
+    }
+    const slots = scheduleSummary.slotsByDate[date] || [];
+    const hasVirtual = slots.some((s) => !s.appointmentType || s.appointmentType === "VIRTUAL" || s.appointmentType === "BOTH");
+    const hasPhysical = slots.some((s) => s.appointmentType === "PHYSICAL" || s.appointmentType === "BOTH");
+
+    if (appointmentType === "VIRTUAL" && !hasVirtual && hasPhysical) {
+      setAppointmentType("PHYSICAL");
+    }
+    if (appointmentType === "PHYSICAL" && !hasPhysical && hasVirtual) {
+      setAppointmentType("VIRTUAL");
+    }
+  }, [date, scheduleSummary, appointmentType]);
+
+  const filteredSlots = availableSlots.filter((slot) => {
+    const t = slot.appointmentType || "VIRTUAL";
+    if (appointmentType === "PHYSICAL") return t === "PHYSICAL" || t === "BOTH";
+    return t === "VIRTUAL" || t === "BOTH";
+  });
+
+  useEffect(() => {
+    if (!selectedSlot) return;
+    const stillValid = filteredSlots.some((slot) => slot.time === selectedSlot && slot.available);
+    if (!stillValid) {
+      setSelectedSlot(null);
+      setTime("");
+    }
+  }, [appointmentType, selectedSlot, filteredSlots]);
 
   // Handle appointment booking
   async function handleBookAppointment(e: FormEvent) {
@@ -146,6 +192,14 @@ export default function AppointmentBooking() {
     }
     if (!patientName || !patientEmail) {
       setError("Your profile is missing name or email. Please re-login.");
+      return;
+    }
+    if (!time) {
+      setError(`Please choose a ${appointmentType.toLowerCase()} time slot before booking.`);
+      return;
+    }
+    if (appointmentType === "PHYSICAL" && !hospitalName.trim()) {
+      setError("Please select or enter a hospital name for physical appointments.");
       return;
     }
 
@@ -161,6 +215,8 @@ export default function AppointmentBooking() {
         patientPhone: patientPhone || undefined,
         doctorId: selectedDoctor.id,
         specialty: selectedDoctor.specialty,
+        appointmentType,
+        hospitalName: appointmentType === "PHYSICAL" ? hospitalName.trim() : undefined,
         date,
         time,
       }, idToken);
@@ -325,6 +381,27 @@ export default function AppointmentBooking() {
             <p className="mt-2 text-sm text-slate-600">Provide your details and select your preferred time slot.</p>
 
             <div className="mt-5 grid gap-3 md:grid-cols-2">
+              <select
+                className="field-input"
+                value={appointmentType}
+                onChange={(e) => setAppointmentType(e.target.value as "PHYSICAL" | "VIRTUAL")}
+                required
+              >
+                <option value="VIRTUAL">Virtual Consultation</option>
+                <option value="PHYSICAL">Physical Consultation</option>
+              </select>
+              {appointmentType === "PHYSICAL" ? (
+                <input
+                  type="text"
+                  className="field-input"
+                  placeholder="Hospital name"
+                  value={hospitalName}
+                  onChange={(e) => setHospitalName(e.target.value)}
+                  required
+                />
+              ) : (
+                <div className="field-input flex items-center text-sm text-slate-500">Virtual meeting link will be shared after payment success.</div>
+              )}
               <input
                 type="text"
                 className="field-input"
@@ -361,7 +438,12 @@ export default function AppointmentBooking() {
                   {scheduleSummary.dates.map((d) => {
                     const dt = new Date(`${d.date}T00:00:00Z`);
                     const dayLabel = dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-                    const label = `${dayLabel} • ${d.availableSlots}/${d.totalSlots} free • ${d.bookedCount} booked`;
+                    
+                    // Get first available hospital for this date
+                    const slotsForDate = scheduleSummary.slotsByDate?.[d.date] || [];
+                    const firstHospital = slotsForDate.find((s) => s.available && s.hospitalName)?.hospitalName;
+                    
+                    const label = `${dayLabel} • ${d.availableSlots}/${d.totalSlots} free${firstHospital ? ` • ${firstHospital}` : ""}`;
                     return (
                       <option key={d.date} value={d.date} disabled={d.availableSlots <= 0}>
                         {label}
@@ -383,26 +465,37 @@ export default function AppointmentBooking() {
 
               {/* Slot selection after date selection */}
               {availableSlots.length > 0 ? (
-                <select
-                  className="field-input"
-                  value={selectedSlot ?? ""}
-                  onChange={(e) => {
-                    setSelectedSlot(e.target.value || null);
-                    setTime(e.target.value);
-                  }}
-                  required
-                >
-                  <option value="">Select a time</option>
-                  {availableSlots.map((slot) => (
-                    <option
-                      key={slot.time}
-                      value={slot.time}
-                      disabled={!slot.available}
-                    >
-                      {slot.time} ({slot.bookedCount} booking{slot.bookedCount === 1 ? "" : "s"})
-                    </option>
-                  ))}
-                </select>
+                <>
+                  <select
+                    className="field-input"
+                    value={selectedSlot ?? ""}
+                    onChange={(e) => {
+                      setSelectedSlot(e.target.value || null);
+                      setTime(e.target.value);
+                      const picked = filteredSlots.find((s) => s.time === e.target.value);
+                      if (picked?.hospitalName && appointmentType === "PHYSICAL") {
+                        setHospitalName(picked.hospitalName);
+                      }
+                    }}
+                    required
+                  >
+                    <option value="">Select a time</option>
+                    {filteredSlots.map((slot) => (
+                      <option
+                        key={slot.time}
+                        value={slot.time}
+                        disabled={!slot.available}
+                      >
+                        {slot.time} ({slot.bookedCount} booking{slot.bookedCount === 1 ? "" : "s"}){appointmentType === "PHYSICAL" && slot.hospitalName ? ` • ${slot.hospitalName}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {filteredSlots.length === 0 && (
+                    <p className="md:col-span-2 text-xs text-amber-700">
+                      No {appointmentType.toLowerCase()} slots are available for this date. Please change date or visit type.
+                    </p>
+                  )}
+                </>
               ) : (
                 <input
                   type="time"

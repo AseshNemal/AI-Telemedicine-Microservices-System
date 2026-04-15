@@ -58,6 +58,7 @@ func RegisterRoutes(router *gin.Engine, h *handlers.Handler) {
 
 		// Reading appointments (sorted by date/time ascending)
 		auth.GET("/appointments/my", h.GetMyAppointments)
+		auth.GET("/appointments/doctor/:id", h.GetAppointmentsByDoctorID)
 		auth.GET("/appointments/:id", h.GetAppointmentByID)
 
 		// Status update — DOCTOR accepts/rejects CONFIRMED; PATIENT or ADMIN cancels

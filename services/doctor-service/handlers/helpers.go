@@ -217,6 +217,7 @@ func (h *Handler) RegisterDoctor(c *gin.Context) {
 		FirebaseUID:          firebaseUID,
 		Name:                 req.Name,
 		Specialty:            req.Specialty,
+		Hospital:             req.Hospital,
 		ExperienceYears:      req.ExperienceYears,
 		ConsultationFeeCents: req.ConsultationFeeCents,
 		VerificationStatus:   models.StatusPending,
@@ -274,6 +275,9 @@ func (h *Handler) UpdateDoctor(c *gin.Context) {
 	if req.Specialty != nil {
 		update["specialty"] = *req.Specialty
 	}
+	if req.Hospital != nil {
+		update["hospital"] = *req.Hospital
+	}
 	if req.ExperienceYears != nil {
 		update["experience_years"] = *req.ExperienceYears
 	}
@@ -330,6 +334,7 @@ func (h *Handler) InitializeDoctorProfile(c *gin.Context) {
 		FirebaseUID:          firebaseUID,
 		Name:                 "",
 		Specialty:            "",
+		Hospital:             "",
 		ExperienceYears:      0,
 		ConsultationFeeCents: 0,
 		VerificationStatus:   models.StatusPending,
@@ -382,7 +387,7 @@ func (h *Handler) UpdateMyDoctorProfile(c *gin.Context) {
 		return
 	}
 
-	if req.Name == nil && req.Specialty == nil && req.ExperienceYears == nil && req.ConsultationFeeCents == nil {
+	if req.Name == nil && req.Specialty == nil && req.Hospital == nil && req.ExperienceYears == nil && req.ConsultationFeeCents == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "at least one updatable field is required"})
 		return
 	}
@@ -407,6 +412,9 @@ func (h *Handler) UpdateMyDoctorProfile(c *gin.Context) {
 	}
 	if req.Specialty != nil {
 		update["specialty"] = *req.Specialty
+	}
+	if req.Hospital != nil {
+		update["hospital"] = *req.Hospital
 	}
 	if req.ExperienceYears != nil {
 		update["experience_years"] = *req.ExperienceYears

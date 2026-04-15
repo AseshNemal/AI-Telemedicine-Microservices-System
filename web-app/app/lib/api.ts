@@ -14,6 +14,7 @@ export type Doctor = {
 export type DoctorProfileUpdateRequest = Partial<{
   name: string;
   specialty: string;
+  hospital: string;
   experience_years: number;
   consultation_fee_cents: number;
 }>;
@@ -27,12 +28,16 @@ export type Appointment = {
   doctorId: string;
   doctorName?: string;
   specialty?: string;
+  appointmentType?: "PHYSICAL" | "VIRTUAL";
+  hospitalName?: string;
   date: string;
   time: string;
   status: string;
   paymentStatus?: string;
   transactionId?: string;
   checkoutUrl?: string;
+  consultationRoomName?: string;
+  meetingLink?: string;
 };
 
 export type PatientProfile = {
@@ -164,12 +169,16 @@ export type DoctorAvailability = {
   day_of_week: number; // 0=Sunday
   start_time: string; // HH:MM
   end_time: string; // HH:MM
+  appointment_type?: "PHYSICAL" | "VIRTUAL" | "BOTH";
+  hospital?: string;
 };
 
 export type DoctorAvailabilitySlotInput = {
   day_of_week: number;
   start_time: string;
   end_time: string;
+  appointment_type: "PHYSICAL" | "VIRTUAL" | "BOTH";
+  hospital?: string;
 };
 
 export type DoctorScheduleSummaryDate = {
@@ -184,6 +193,8 @@ export type DoctorScheduleSummarySlot = {
   time: string;
   bookedCount: number;
   available: boolean;
+  appointmentType?: string;
+  hospitalName?: string;
 };
 
 export type DoctorScheduleSummary = {
@@ -400,6 +411,8 @@ export async function createAppointment(payload: {
   patientPhone?: string;
   doctorId: string;
   specialty: string;
+  appointmentType: "PHYSICAL" | "VIRTUAL";
+  hospitalName?: string;
   date: string;
   time: string;
 }, idToken: string) {

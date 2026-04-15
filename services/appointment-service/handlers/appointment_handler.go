@@ -254,6 +254,19 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "specialty must not exceed 100 characters"})
 		return
 	}
+	req.AppointmentType = strings.ToUpper(strings.TrimSpace(req.AppointmentType))
+	if req.AppointmentType == "" {
+		req.AppointmentType = "VIRTUAL"
+	}
+	if req.AppointmentType != "PHYSICAL" && req.AppointmentType != "VIRTUAL" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "appointmentType must be PHYSICAL or VIRTUAL"})
+		return
+	}
+	req.HospitalName = strings.TrimSpace(req.HospitalName)
+	if req.AppointmentType == "PHYSICAL" && req.HospitalName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "hospitalName is required for physical appointments"})
+		return
+	}
 	if req.Date == "" || req.Time == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "date and time are required"})
 		return
@@ -282,7 +295,7 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 	}
 
 	// Step 4 – check doctor availability (mandatory).
-	available, err := h.doctorSvc.CheckAvailability(req.DoctorID, req.Date, req.Time)
+	available, err := h.doctorSvc.CheckAvailability(req.DoctorID, req.Date, req.Time, req.AppointmentType)
 	if err != nil {
 		log.Printf("[appointment-service] doctor availability check failed: %v", err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "could not verify doctor availability; please try again"})
@@ -306,6 +319,9 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 			req.DoctorName = req.DoctorID
 		}
 		doctorFeeCents = doctorInfo.ConsultationFeeCents
+		if req.AppointmentType == "PHYSICAL" && req.HospitalName == "" {
+			req.HospitalName = strings.TrimSpace(doctorInfo.Hospital)
+		}
 
 		// C-8: Validate submitted specialty matches the doctor's actual specialty.
 		if !strings.EqualFold(strings.TrimSpace(req.Specialty), strings.TrimSpace(doctorInfo.Specialty)) {
@@ -348,6 +364,8 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 		"doctorName":    req.DoctorName,
 		"doctorEmail":   req.DoctorEmail,
 		"specialty":     req.Specialty,
+		"appointmentType": req.AppointmentType,
+		"hospitalName":   req.HospitalName,
 		"date":          req.Date,
 		"time":          req.Time,
 		"status":        req.Status,
@@ -463,6 +481,8 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 			"patientPhone":  req.PatientPhone,
 			"doctorId":      req.DoctorID,
 			"specialty":     req.Specialty,
+			"appointmentType": req.AppointmentType,
+			"hospitalName":   req.HospitalName,
 			"date":          req.Date,
 			"time":          req.Time,
 			"status":        req.Status,
@@ -553,6 +573,22 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 		return
 	}
 
+	meetingLink := ""
+	roomName := ""
+	if strings.EqualFold(appt.AppointmentType, "VIRTUAL") {
+		var createErr error
+		roomName, createErr = h.telemediaSvc.CreateRoom(appt.ID)
+		if createErr != nil {
+			log.Printf("[appointment-service] failed to create consultation room for %s: %v", id, createErr)
+		} else if roomName != "" {
+			if joinToken, tokenErr := h.telemediaSvc.GetJoinToken(roomName, appt.PatientID, appt.PatientName); tokenErr != nil {
+				log.Printf("[appointment-service] failed to mint join token for %s: %v", id, tokenErr)
+			} else {
+				meetingLink = h.telemediaSvc.BuildJoinURL(joinToken.WsURL, joinToken.Token)
+			}
+		}
+	}
+
 	// Transition PENDING_PAYMENT → CONFIRMED.
 	updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer updateCancel()
@@ -561,9 +597,11 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 		updateCtx,
 		bson.M{"id": id, "status": models.StatusPendingPayment}, // optimistic guard
 		bson.M{"$set": bson.M{
-			"status":        models.StatusConfirmed,
-			"paymentStatus": models.PaymentCompleted,
-			"updatedAt":     time.Now().UTC(),
+			"status":               models.StatusConfirmed,
+			"paymentStatus":        models.PaymentCompleted,
+			"consultationRoomName": roomName,
+			"meetingLink":          meetingLink,
+			"updatedAt":            time.Now().UTC(),
 		}},
 	)
 	if err != nil {
@@ -576,19 +614,22 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 	}
 
 	// Notify the patient: payment successful, appointment confirmed.
-	go h.notifSvc.SendPaymentConfirmation(appt.ID, appt.PatientEmail, appt.PatientPhone, appt.PatientName, doctorDisplayName(appt), appt.Specialty, appt.Date, appt.Time)
+	go h.notifSvc.SendPaymentConfirmation(appt.ID, appt.PatientEmail, appt.PatientPhone, appt.PatientName, doctorDisplayName(appt), appt.Specialty, appt.AppointmentType, appt.HospitalName, meetingLink, appt.Date, appt.Time)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Payment confirmed. Your appointment is now confirmed and awaiting the doctor's acceptance.",
 		"appointment": gin.H{
-			"id":            appt.ID,
-			"patientName":   appt.PatientName,
-			"doctorId":      appt.DoctorID,
-			"specialty":     appt.Specialty,
-			"date":          appt.Date,
-			"time":          appt.Time,
-			"status":        models.StatusConfirmed,
-			"paymentStatus": models.PaymentCompleted,
+			"id":              appt.ID,
+			"patientName":     appt.PatientName,
+			"doctorId":        appt.DoctorID,
+			"specialty":       appt.Specialty,
+			"appointmentType": appt.AppointmentType,
+			"hospitalName":    appt.HospitalName,
+			"date":            appt.Date,
+			"time":            appt.Time,
+			"status":          models.StatusConfirmed,
+			"paymentStatus":   models.PaymentCompleted,
+			"meetingLink":     meetingLink,
 		},
 	})
 }
@@ -669,6 +710,21 @@ func (h *Handler) ConfirmPaymentInternal(c *gin.Context) {
 		return
 	}
 
+	meetingLink := ""
+	roomName := ""
+	if strings.EqualFold(appt.AppointmentType, "VIRTUAL") {
+		if createdRoom, createErr := h.telemediaSvc.CreateRoom(appt.ID); createErr != nil {
+			log.Printf("[appointment-service] failed to create consultation room for %s: %v", id, createErr)
+		} else {
+			roomName = createdRoom
+			if joinToken, tokenErr := h.telemediaSvc.GetJoinToken(roomName, appt.PatientID, appt.PatientName); tokenErr != nil {
+				log.Printf("[appointment-service] failed to mint join token for %s: %v", id, tokenErr)
+			} else {
+				meetingLink = h.telemediaSvc.BuildJoinURL(joinToken.WsURL, joinToken.Token)
+			}
+		}
+	}
+
 	updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer updateCancel()
 
@@ -676,10 +732,12 @@ func (h *Handler) ConfirmPaymentInternal(c *gin.Context) {
 		updateCtx,
 		bson.M{"id": id, "status": models.StatusPendingPayment},
 		bson.M{"$set": bson.M{
-			"status":        models.StatusConfirmed,
-			"paymentStatus": models.PaymentCompleted,
-			"transactionId": txnToVerify,
-			"updatedAt":     time.Now().UTC(),
+			"status":               models.StatusConfirmed,
+			"paymentStatus":        models.PaymentCompleted,
+			"transactionId":        txnToVerify,
+			"consultationRoomName": roomName,
+			"meetingLink":          meetingLink,
+			"updatedAt":            time.Now().UTC(),
 		}},
 	)
 	if err != nil {
@@ -691,14 +749,17 @@ func (h *Handler) ConfirmPaymentInternal(c *gin.Context) {
 		return
 	}
 
-	go h.notifSvc.SendPaymentConfirmation(appt.ID, appt.PatientEmail, appt.PatientPhone, appt.PatientName, doctorDisplayName(appt), appt.Specialty, appt.Date, appt.Time)
+	go h.notifSvc.SendPaymentConfirmation(appt.ID, appt.PatientEmail, appt.PatientPhone, appt.PatientName, doctorDisplayName(appt), appt.Specialty, appt.AppointmentType, appt.HospitalName, meetingLink, appt.Date, appt.Time)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Payment confirmed automatically.",
 		"appointment": gin.H{
-			"id":            appt.ID,
-			"status":        models.StatusConfirmed,
-			"paymentStatus": models.PaymentCompleted,
+			"id":              appt.ID,
+			"appointmentType": appt.AppointmentType,
+			"hospitalName":    appt.HospitalName,
+			"status":          models.StatusConfirmed,
+			"paymentStatus":   models.PaymentCompleted,
+			"meetingLink":     meetingLink,
 		},
 	})
 }
@@ -838,10 +899,13 @@ func (h *Handler) GetMyAppointments(c *gin.Context) {
 				ID:                   r.ID,
 				PatientName:          r.PatientName,
 				Specialty:            r.Specialty,
+				AppointmentType:      r.AppointmentType,
+				HospitalName:         r.HospitalName,
 				Date:                 r.Date,
 				Time:                 r.Time,
 				Status:               r.Status,
 				ConsultationRoomName: r.ConsultationRoomName,
+				MeetingLink:          r.MeetingLink,
 				CreatedAt:            r.CreatedAt,
 			}
 		}
@@ -850,6 +914,110 @@ func (h *Handler) GetMyAppointments(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, results)
+}
+
+// GetAppointmentsByDoctorID returns appointments for a specific doctor profile.
+// This route is used by the doctor dashboard because doctor auth UID and doctor
+// profile ID are distinct values in the doctor service data model.
+func (h *Handler) GetAppointmentsByDoctorID(c *gin.Context) {
+	if !dbReady(h.db) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
+		return
+	}
+
+	doctorID := strings.TrimSpace(c.Param("id"))
+	if doctorID == "" || len(doctorID) > 128 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid doctor id"})
+		return
+	}
+
+	role := callerRole(c)
+	uid := callerUID(c)
+	if role != roleDoctor && role != roleAdmin {
+		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		return
+	}
+
+	doctorProfile, err := h.doctorSvc.GetDoctorByID(doctorID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "doctor profile not found"})
+		return
+	}
+	if role == roleDoctor && doctorProfile.FirebaseUID != uid {
+		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
+		return
+	}
+
+	statusFilter := c.Query("status")
+	if statusFilter != "" {
+		validStatuses := map[string]bool{
+			models.StatusPendingPayment: true,
+			models.StatusConfirmed:      true,
+			models.StatusBooked:         true,
+			models.StatusRejected:       true,
+			models.StatusCancelled:      true,
+			models.StatusCompleted:     true,
+		}
+		if !validStatuses[statusFilter] {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("unknown status %q; valid values: PENDING_PAYMENT, CONFIRMED, BOOKED, REJECTED, CANCELLED, COMPLETED", statusFilter),
+			})
+			return
+		}
+	}
+
+	filter := bson.D{{Key: "doctorId", Value: doctorID}}
+	if statusFilter != "" {
+		filter = append(filter, bson.E{Key: "status", Value: statusFilter})
+	}
+
+	page := 1
+	limit := int64(50)
+	if p, _ := strconv.Atoi(c.Query("page")); p > 0 {
+		page = p
+	}
+	if l, _ := strconv.Atoi(c.Query("limit")); l > 0 && l <= 100 {
+		limit = int64(l)
+	}
+	skip := int64(page-1) * limit
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	sortOpts := options.Find().SetSort(bson.D{
+		{Key: "date", Value: 1},
+		{Key: "time", Value: 1},
+	}).SetSkip(skip).SetLimit(limit)
+
+	cursor, err := h.db.DB.Collection("appointments").Find(ctx, filter, sortOpts)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query appointments"})
+		return
+	}
+
+	var results []models.Appointment
+	if err = cursor.All(ctx, &results); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read appointments"})
+		return
+	}
+
+	views := make([]models.DoctorAppointmentView, len(results))
+	for i, r := range results {
+		views[i] = models.DoctorAppointmentView{
+			ID:                   r.ID,
+			PatientName:          r.PatientName,
+			Specialty:            r.Specialty,
+			AppointmentType:      r.AppointmentType,
+			HospitalName:         r.HospitalName,
+			Date:                 r.Date,
+			Time:                 r.Time,
+			Status:               r.Status,
+			ConsultationRoomName: r.ConsultationRoomName,
+			MeetingLink:          r.MeetingLink,
+			CreatedAt:            r.CreatedAt,
+		}
+	}
+	c.JSON(http.StatusOK, views)
 }
 
 // UpdateAppointmentStatus changes an appointment's status with full business-rule enforcement.
@@ -983,39 +1151,10 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 		}
 	}
 
-	// ── Create LiveKit room AFTER successful DB write (issue B1) ────────────
-	// Only now is it safe to create the room; the DB record is authoritative.
-	var roomName string
-	if newStatus == models.StatusBooked {
-		var createErr error
-		roomName, createErr = h.telemediaSvc.CreateRoom(appt.ID)
-		if createErr != nil {
-			log.Printf("[appointment-service] failed to create consultation room for %s: %v", appt.ID, createErr)
-			// Non-fatal: the appointment is already BOOKED in the DB.
-			// The room will be created lazily when GetConsultationToken is called.
-			roomName = ""
-		} else if roomName != "" {
-			// Persist the room name into the appointment record.
-			roomCtx, roomCancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer roomCancel()
-			if _, roomErr := h.db.DB.Collection("appointments").UpdateOne(
-				roomCtx,
-				bson.M{"id": id},
-				bson.M{"$set": bson.M{"consultationRoomName": roomName, "updatedAt": time.Now().UTC()}},
-			); roomErr != nil {
-				log.Printf("[appointment-service] failed to persist consultationRoomName for %s: %v", id, roomErr)
-			}
-		}
-	}
-
 	// Fire-and-forget notification.
 	go h.notifSvc.SendStatusUpdate(appt.ID, appt.PatientEmail, appt.PatientPhone, doctorDisplayName(appt), appt.Date, appt.Time, newStatus, req.Reason)
 
-	resp := gin.H{"message": "status updated", "id": id, "status": newStatus}
-	if roomName != "" {
-		resp["consultationRoomName"] = roomName
-	}
-	c.JSON(http.StatusOK, resp)
+	c.JSON(http.StatusOK, gin.H{"message": "status updated", "id": id, "status": newStatus})
 }
 
 // RescheduleAppointment allows a PATIENT to propose a new date/time for their appointment.
@@ -1095,7 +1234,7 @@ func (h *Handler) RescheduleAppointment(c *gin.Context) {
 	}
 
 	// Re-validate availability on the new slot (mandatory).
-	available, err := h.doctorSvc.CheckAvailability(appt.DoctorID, req.Date, req.Time)
+	available, err := h.doctorSvc.CheckAvailability(appt.DoctorID, req.Date, req.Time, appt.AppointmentType)
 	if err != nil {
 		log.Printf("[appointment-service] doctor availability check failed during reschedule: %v", err)
 		c.JSON(http.StatusBadGateway, gin.H{"error": "could not verify doctor availability; please try again"})
@@ -1347,9 +1486,11 @@ type scheduleSummaryDate struct {
 }
 
 type scheduleSummarySlot struct {
-	Time        string `json:"time"`
-	BookedCount int    `json:"bookedCount"`
-	Available   bool   `json:"available"`
+	Time            string `json:"time"`
+	BookedCount     int    `json:"bookedCount"`
+	Available       bool   `json:"available"`
+	AppointmentType string `json:"appointmentType,omitempty"`
+	HospitalName    string `json:"hospitalName,omitempty"`
 }
 
 // GetDoctorScheduleSummary returns real booking-aware availability for a doctor.
@@ -1430,6 +1571,7 @@ func (h *Handler) GetDoctorScheduleSummary(c *gin.Context) {
 	}
 
 	weeklySlots := map[int][]string{}
+	weeklySlotMeta := map[int]scheduleSummarySlot{}
 	for _, block := range availability {
 		if block.DayOfWeek < 0 || block.DayOfWeek > 6 {
 			continue
@@ -1439,6 +1581,10 @@ func (h *Handler) GetDoctorScheduleSummary(c *gin.Context) {
 			continue
 		}
 		weeklySlots[block.DayOfWeek] = append(weeklySlots[block.DayOfWeek], slots...)
+		weeklySlotMeta[block.DayOfWeek] = scheduleSummarySlot{
+			AppointmentType: strings.ToUpper(strings.TrimSpace(block.AppointmentType)),
+			HospitalName:    strings.TrimSpace(block.Hospital),
+		}
 	}
 
 	if !dbReady(h.db) {
@@ -1516,9 +1662,11 @@ func (h *Handler) GetDoctorScheduleSummary(c *gin.Context) {
 			count := bookingsByDateAndTime[dateKey][slot]
 			bookedCount += count
 			dateSlots = append(dateSlots, scheduleSummarySlot{
-				Time:        slot,
-				BookedCount: count,
-				Available:   count == 0,
+				Time:            slot,
+				BookedCount:     count,
+				Available:       count == 0,
+				AppointmentType: weeklySlotMeta[dow].AppointmentType,
+				HospitalName:    weeklySlotMeta[dow].HospitalName,
 			})
 		}
 

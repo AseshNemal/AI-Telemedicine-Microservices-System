@@ -33,6 +33,7 @@ type Doctor struct {
 	FirebaseUID          string             `json:"firebase_uid" bson:"firebase_uid"`
 	Name                 string             `json:"name" bson:"name"`
 	Specialty            string             `json:"specialty" bson:"specialty"`
+	Hospital             string             `json:"hospital,omitempty" bson:"hospital,omitempty"`
 	ExperienceYears      int                `json:"experience_years" bson:"experience_years"`
 	ConsultationFeeCents int                `json:"consultation_fee_cents" bson:"consultation_fee_cents"`
 	VerificationStatus   VerificationStatus `json:"verification_status" bson:"verification_status"`
@@ -47,6 +48,8 @@ type Availability struct {
 	DayOfWeek int    `json:"day_of_week" bson:"day_of_week"` // 0=Sunday … 6=Saturday
 	StartTime string `json:"start_time" bson:"start_time"`   // "HH:MM"
 	EndTime   string `json:"end_time" bson:"end_time"`       // "HH:MM"
+	AppointmentType string `json:"appointment_type" bson:"appointment_type"` // PHYSICAL | VIRTUAL | BOTH
+	Hospital        string `json:"hospital,omitempty" bson:"hospital,omitempty"`
 }
 
 // Consultation is one row in the "consultations" collection.
@@ -71,6 +74,7 @@ type Consultation struct {
 type RegisterDoctorRequest struct {
 	Name                 string `json:"name" binding:"required"`
 	Specialty            string `json:"specialty" binding:"required"`
+	Hospital             string `json:"hospital" binding:"required"`
 	ExperienceYears      int    `json:"experience_years"`
 	ConsultationFeeCents int    `json:"consultation_fee_cents"`
 }
@@ -79,15 +83,18 @@ type RegisterDoctorRequest struct {
 type UpdateDoctorRequest struct {
 	Name                 *string `json:"name"`
 	Specialty            *string `json:"specialty"`
+	Hospital             *string `json:"hospital"`
 	ExperienceYears      *int    `json:"experience_years"`
 	ConsultationFeeCents *int    `json:"consultation_fee_cents"`
 }
 
 // AvailabilitySlot is one element in the PUT /doctors/:id/availability body.
 type AvailabilitySlot struct {
-	DayOfWeek int    `json:"day_of_week" binding:"min=0,max=6"`
-	StartTime string `json:"start_time" binding:"required"`
-	EndTime   string `json:"end_time" binding:"required"`
+	DayOfWeek       int    `json:"day_of_week" binding:"min=0,max=6"`
+	StartTime       string `json:"start_time" binding:"required"`
+	EndTime         string `json:"end_time" binding:"required"`
+	AppointmentType string `json:"appointment_type" binding:"required"` // PHYSICAL | VIRTUAL | BOTH
+	Hospital        string `json:"hospital,omitempty"`
 }
 
 // PrescriptionRequest is the POST /doctor/appointments/:id/prescription body.
@@ -113,9 +120,10 @@ type EndConsultationRequest struct {
 
 // AvailabilityRequest is the POST /check-availability request body (internal).
 type AvailabilityRequest struct {
-	DoctorID string `json:"doctorId"`
-	Date     string `json:"date"` // YYYY-MM-DD
-	Time     string `json:"time"` // HH:MM
+	DoctorID        string `json:"doctorId"`
+	Date            string `json:"date"` // YYYY-MM-DD
+	Time            string `json:"time"` // HH:MM
+	AppointmentType string `json:"appointmentType"`
 }
 
 // AvailabilityResponse is the POST /check-availability response body.

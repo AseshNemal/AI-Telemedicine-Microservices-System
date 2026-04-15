@@ -51,6 +51,7 @@ export default function AppointmentConsole({ initialAppointments }: AppointmentC
         patientEmail,
         doctorId,
         specialty,
+        appointmentType: "VIRTUAL",
         date,
         time,
       }, idToken);

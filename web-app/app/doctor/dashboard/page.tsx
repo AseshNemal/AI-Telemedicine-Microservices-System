@@ -41,17 +41,31 @@ type EditableAvailabilityDay = {
   enabled: boolean;
   start_time: string;
   end_time: string;
+  appointment_type: "PHYSICAL" | "VIRTUAL" | "BOTH";
+  hospital: string;
 };
+
+const HOSPITAL_OPTIONS = [
+  "Lanka Hospital",
+  "National Hospital",
+  "Asiri Hospital",
+  "Durdans Hospital",
+  "Nawaloka Hospital",
+  "Other",
+];
 
 function buildAvailabilityForm(slots: DoctorAvailability[] = []): EditableAvailabilityDay[] {
   return WEEK_DAYS.map((day) => {
     const found = slots.find((slot) => slot.day_of_week === day.day_of_week);
+    const appointmentType = (found?.appointment_type || "VIRTUAL") as "PHYSICAL" | "VIRTUAL" | "BOTH";
     return {
       day_of_week: day.day_of_week,
       label: day.label,
       enabled: Boolean(found),
       start_time: found?.start_time || "09:00",
       end_time: found?.end_time || "17:00",
+      appointment_type: appointmentType,
+      hospital: found?.hospital || "Lanka Hospital",
     };
   });
 }
@@ -349,6 +363,14 @@ export default function DoctorDashboardPage() {
         setError(`Start time must be before end time for ${day.label}.`);
         return;
       }
+      if (!day.appointment_type) {
+        setError(`Please select a visit type for ${day.label}.`);
+        return;
+      }
+      if ((day.appointment_type === "PHYSICAL" || day.appointment_type === "BOTH") && !day.hospital.trim()) {
+        setError(`Please choose a hospital for ${day.label}.`);
+        return;
+      }
     }
 
     setAvailabilitySaving(true);
@@ -362,6 +384,8 @@ export default function DoctorDashboardPage() {
           day_of_week: day.day_of_week,
           start_time: day.start_time,
           end_time: day.end_time,
+          appointment_type: day.appointment_type,
+          hospital: day.hospital.trim(),
         })),
         idToken
       );
@@ -468,7 +492,7 @@ export default function DoctorDashboardPage() {
 
         <div className="mt-5 space-y-3">
           {availabilityForm.map((day) => (
-            <div key={day.day_of_week} className="grid items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[140px_120px_1fr_1fr]">
+            <div key={day.day_of_week} className="grid items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[120px_120px_1fr_1fr_180px_200px]">
               <p className="text-sm font-semibold text-slate-900">{day.label}</p>
               <label className="inline-flex items-center gap-2 text-xs text-slate-600">
                 <input
@@ -483,6 +507,21 @@ export default function DoctorDashboardPage() {
                 />
                 Available
               </label>
+              <select
+                className="field-input"
+                value={day.appointment_type}
+                disabled={!day.enabled}
+                onChange={(e) => {
+                  const value = e.target.value as "PHYSICAL" | "VIRTUAL" | "BOTH";
+                  setAvailabilityForm((prev) => prev.map((item) => (
+                    item.day_of_week === day.day_of_week ? { ...item, appointment_type: value } : item
+                  )));
+                }}
+              >
+                <option value="VIRTUAL">Virtual</option>
+                <option value="PHYSICAL">Physical</option>
+                <option value="BOTH">Both</option>
+              </select>
               <input
                 className="field-input"
                 type="time"
@@ -509,6 +548,37 @@ export default function DoctorDashboardPage() {
                   )));
                 }}
               />
+              <div className="flex gap-2">
+                <select
+                  className="field-input"
+                  value={HOSPITAL_OPTIONS.includes(day.hospital) ? day.hospital : "Other"}
+                  disabled={!day.enabled || day.appointment_type === "VIRTUAL"}
+                  onChange={(e) => {
+                    const selected = e.target.value;
+                    setAvailabilityForm((prev) => prev.map((item) => (
+                      item.day_of_week === day.day_of_week
+                        ? { ...item, hospital: selected === "Other" ? item.hospital : selected }
+                        : item
+                    )));
+                  }}
+                >
+                  {HOSPITAL_OPTIONS.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+                <input
+                  className="field-input"
+                  placeholder="Custom hospital"
+                  value={HOSPITAL_OPTIONS.includes(day.hospital) ? "" : day.hospital}
+                  disabled={!day.enabled || day.appointment_type === "VIRTUAL"}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setAvailabilityForm((prev) => prev.map((item) => (
+                      item.day_of_week === day.day_of_week ? { ...item, hospital: value } : item
+                    )));
+                  }}
+                />
+              </div>
             </div>
           ))}
 
@@ -567,10 +637,30 @@ export default function DoctorDashboardPage() {
               {appointments.map((appointment) => (
                 <tr key={appointment.id}>
                   <td className="px-4 py-4 font-medium text-slate-900">{appointment.patientName || appointment.patientId}</td>
-                  <td className="px-4 py-4 text-slate-600">{appointment.specialty || "General"}</td>
-                  <td className="px-4 py-4 text-slate-600">{appointment.date} {appointment.time}</td>
+                  <td className="px-4 py-4 text-slate-600">
+                    <div>{appointment.specialty || "General"}</div>
+                    <div className="text-xs uppercase tracking-[0.12em] text-slate-500">{appointment.appointmentType || "VIRTUAL"}</div>
+                  </td>
+                  <td className="px-4 py-4 text-slate-600">
+                    <div>{appointment.date} {appointment.time}</div>
+                    {appointment.appointmentType === "PHYSICAL" && appointment.hospitalName && (
+                      <div className="text-xs text-slate-500">Hospital: {appointment.hospitalName}</div>
+                    )}
+                  </td>
                   <td className="px-4 py-4 text-slate-700">{appointment.status}</td>
                   <td className="px-4 py-4">
+                    {appointment.appointmentType === "VIRTUAL" && appointment.meetingLink && (
+                      <div className="mb-2">
+                        <a
+                          href={appointment.meetingLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-800 hover:bg-blue-100"
+                        >
+                          Open meeting link
+                        </a>
+                      </div>
+                    )}
                     {appointment.status === "CONFIRMED" && (
                       <div className="flex gap-2">
                         <button className="btn-primary text-xs" onClick={() => void handleAccept(appointment.id)} disabled={loading}>

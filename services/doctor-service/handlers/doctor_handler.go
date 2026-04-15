@@ -237,6 +237,20 @@ func (h *Handler) SetAvailability(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "start_time must be before end_time"})
 			return
 		}
+		mode := strings.ToUpper(strings.TrimSpace(s.AppointmentType))
+		if mode == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "appointment_type is required"})
+			return
+		}
+		if mode != "PHYSICAL" && mode != "VIRTUAL" && mode != "BOTH" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "appointment_type must be PHYSICAL, VIRTUAL, or BOTH"})
+			return
+		}
+		hospital := strings.TrimSpace(s.Hospital)
+		if (mode == "PHYSICAL" || mode == "BOTH") && hospital == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "hospital is required for physical availability"})
+			return
+		}
 	}
 
 	// Transactional replace: delete all existing slots then insert the new set.
@@ -256,12 +270,16 @@ func (h *Handler) SetAvailability(c *gin.Context) {
 		}
 		docs := make([]interface{}, 0, len(slots))
 		for _, s := range slots {
+			mode := strings.ToUpper(strings.TrimSpace(s.AppointmentType))
+			hospital := strings.TrimSpace(s.Hospital)
 			docs = append(docs, models.Availability{
-				ID:        generateID("AV"),
-				DoctorID:  id,
-				DayOfWeek: s.DayOfWeek,
-				StartTime: s.StartTime,
-				EndTime:   s.EndTime,
+				ID:              generateID("AV"),
+				DoctorID:        id,
+				DayOfWeek:       s.DayOfWeek,
+				StartTime:       s.StartTime,
+				EndTime:         s.EndTime,
+				AppointmentType: mode,
+				Hospital:        hospital,
 			})
 		}
 		_, insErr := h.db.DB.Collection("availability").InsertMany(sCtx, docs)
@@ -1186,6 +1204,27 @@ func (h *Handler) CheckAvailability(c *gin.Context) {
 		c.JSON(http.StatusOK, models.AvailabilityResponse{Available: false})
 		return
 	} else if err != nil {
+		c.JSON(http.StatusOK, models.AvailabilityResponse{Available: false})
+		return
+	}
+
+	requestedType := strings.ToUpper(strings.TrimSpace(req.AppointmentType))
+	if requestedType == "" {
+		requestedType = "VIRTUAL"
+	}
+	slotType := strings.ToUpper(strings.TrimSpace(slot.AppointmentType))
+	if slotType == "" {
+		slotType = "VIRTUAL"
+	}
+	if requestedType != "PHYSICAL" && requestedType != "VIRTUAL" {
+		c.JSON(http.StatusOK, models.AvailabilityResponse{Available: false})
+		return
+	}
+	if slotType != "BOTH" && slotType != requestedType {
+		c.JSON(http.StatusOK, models.AvailabilityResponse{Available: false})
+		return
+	}
+	if requestedType == "PHYSICAL" && strings.TrimSpace(slot.Hospital) == "" {
 		c.JSON(http.StatusOK, models.AvailabilityResponse{Available: false})
 		return
 	}

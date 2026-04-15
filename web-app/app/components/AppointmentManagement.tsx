@@ -294,6 +294,19 @@ export default function AppointmentManagement() {
                   <h3 className="font-semibold text-slate-900">Doctor: {displayDoctorName(apt)}</h3>
                   <p className="mt-1 text-sm text-slate-600">Patient: {displayPatientName(apt)}</p>
                   <p className="mt-1 text-sm text-slate-600">{formatDateTime(apt.date, apt.time)}</p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Type: {apt.appointmentType === "PHYSICAL" ? "Physical" : "Virtual"}
+                    {apt.appointmentType === "PHYSICAL" && apt.hospitalName ? ` • ${apt.hospitalName}` : ""}
+                  </p>
+                  {apt.appointmentType === "VIRTUAL" ? (
+                    apt.meetingLink ? (
+                      <p className="mt-1 text-sm text-blue-600">
+                        <a href={apt.meetingLink} target="_blank" rel="noreferrer">Join link</a>
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-sm text-slate-500">Virtual link will be shared after payment.</p>
+                    )
+                  ) : null}
                   <p className={`mt-2 text-xs font-semibold uppercase tracking-[0.12em] ${getStatusColor(apt.status)}`}>
                     {apt.status}
                   </p>
@@ -339,6 +352,22 @@ export default function AppointmentManagement() {
             <p><strong>Doctor:</strong> {displayDoctorName(selectedAppointment)}</p>
             <p><strong>Patient:</strong> {displayPatientName(selectedAppointment)}</p>
             <p><strong>Time:</strong> {formatDateTime(selectedAppointment.date, selectedAppointment.time)}</p>
+            <p><strong>Type:</strong> {selectedAppointment.appointmentType === "PHYSICAL" ? "Physical" : "Virtual"}</p>
+            {selectedAppointment.appointmentType === "PHYSICAL" && selectedAppointment.hospitalName && (
+              <p><strong>Hospital:</strong> {selectedAppointment.hospitalName}</p>
+            )}
+            {selectedAppointment.appointmentType === "VIRTUAL" && (
+              selectedAppointment.meetingLink ? (
+                <p className="text-blue-600">
+                  <strong>Meeting link:</strong>{" "}
+                  <a href={selectedAppointment.meetingLink} target="_blank" rel="noreferrer">
+                    {selectedAppointment.meetingLink}
+                  </a>
+                </p>
+              ) : (
+                <p className="text-sm text-slate-500">Virtual meeting link will be shared after payment.</p>
+              )
+            )}
             <p className={`font-semibold ${getStatusColor(selectedAppointment.status)}`}>
               Status: {selectedAppointment.status}
             </p>

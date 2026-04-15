@@ -127,15 +127,29 @@ func (s *NotificationService) SendBookingConfirmation(appointmentID, patientEmai
 
 // SendPaymentConfirmation notifies the patient that payment was successful and
 // their appointment is now confirmed (awaiting doctor acceptance).
-func (s *NotificationService) SendPaymentConfirmation(appointmentID, patientEmail, patientPhone, patientName, doctorDisplay, specialty, date, timeSlot string) {
+func (s *NotificationService) SendPaymentConfirmation(appointmentID, patientEmail, patientPhone, patientName, doctorDisplay, specialty, appointmentType, hospitalName, meetingLink, date, timeSlot string) {
 	publicID := readableAppointmentID(appointmentID)
 	subject := fmt.Sprintf("Payment Successful — Appointment %s Confirmed", publicID)
 	body := fmt.Sprintf(
-		"Dear %s,\n\nYour payment has been received. Your appointment is now confirmed and awaiting the doctor's acceptance.\n\nAppointment Details:\n  Appointment ID: %s\n  Patient Name:   %s\n  Doctor:         Dr. %s\n  Specialty:      %s\n  Date:           %s\n  Time:           %s\n  Status:         CONFIRMED\n  Payment Status: COMPLETED\n\nYou will be notified once the doctor accepts or rejects your request.",
-		patientName, publicID, patientName, doctorDisplay, specialty, date, timeSlot,
+		"Dear %s,\n\nYour payment has been received. Your appointment is now confirmed.\n\nAppointment Details:\n  Appointment ID: %s\n  Patient Name:   %s\n  Doctor:         Dr. %s\n  Specialty:      %s\n  Type:           %s\n  Date:           %s\n  Time:           %s\n  Status:         CONFIRMED\n  Payment Status: COMPLETED",
+		patientName, publicID, patientName, doctorDisplay, specialty, appointmentType, date, timeSlot,
 	)
+	if appointmentType == "PHYSICAL" && hospitalName != "" {
+		body += fmt.Sprintf("\n  Hospital:       %s", hospitalName)
+	}
+	if appointmentType == "VIRTUAL" && meetingLink != "" {
+		body += fmt.Sprintf("\n  Meeting Link:   %s", meetingLink)
+	}
+	body += "\n\nYou will be notified once the doctor accepts or rejects your request."
 	s.sendEmail(patientEmail, subject, body)
-	s.sendSMS(patientPhone, fmt.Sprintf("Payment confirmed for appt %s: Dr. %s, %s %s. Status CONFIRMED.", publicID, doctorDisplay, date, timeSlot))
+	sms := fmt.Sprintf("Payment confirmed for appt %s: Dr. %s, %s %s. Status CONFIRMED.", publicID, doctorDisplay, date, timeSlot)
+	if appointmentType == "PHYSICAL" && hospitalName != "" {
+		sms += " Hospital: " + hospitalName + "."
+	}
+	if appointmentType == "VIRTUAL" && meetingLink != "" {
+		sms += " Meeting: " + meetingLink
+	}
+	s.sendSMS(patientPhone, sms)
 }
 
 // SendStatusUpdate notifies the patient when their appointment status changes.

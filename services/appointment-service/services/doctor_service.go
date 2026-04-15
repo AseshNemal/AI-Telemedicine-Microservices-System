@@ -34,6 +34,7 @@ type Doctor struct {
 	ID                   string `json:"id"`
 	Name                 string `json:"name"`
 	Specialty            string `json:"specialty"`
+	Hospital             string `json:"hospital,omitempty"`
 	ExperienceYears      int    `json:"experience_years"`
 	ConsultationFeeCents int    `json:"consultation_fee_cents"`
 	VerificationStatus   string `json:"verification_status"`
@@ -41,17 +42,20 @@ type Doctor struct {
 
 // DoctorAvailability represents one weekly availability block for a doctor.
 type DoctorAvailability struct {
-	ID        string `json:"id"`
-	DoctorID  string `json:"doctor_id"`
-	DayOfWeek int    `json:"day_of_week"`
-	StartTime string `json:"start_time"`
-	EndTime   string `json:"end_time"`
+	ID              string `json:"id"`
+	DoctorID        string `json:"doctor_id"`
+	DayOfWeek       int    `json:"day_of_week"`
+	StartTime       string `json:"start_time"`
+	EndTime         string `json:"end_time"`
+	AppointmentType string `json:"appointment_type"`
+	Hospital        string `json:"hospital,omitempty"`
 }
 
 type availabilityRequest struct {
-	DoctorID string `json:"doctorId"`
-	Date     string `json:"date"`
-	Time     string `json:"time"`
+	DoctorID        string `json:"doctorId"`
+	Date            string `json:"date"`
+	Time            string `json:"time"`
+	AppointmentType string `json:"appointmentType"`
 }
 
 type availabilityResponse struct {
@@ -61,11 +65,12 @@ type availabilityResponse struct {
 // CheckAvailability calls POST /check-availability on the doctor service.
 // Returns (true, nil) when the slot is free, (false, nil) when taken,
 // and (false, err) when the remote call itself fails.
-func (s *DoctorService) CheckAvailability(doctorID, date, timeSlot string) (bool, error) {
+func (s *DoctorService) CheckAvailability(doctorID, date, timeSlot, appointmentType string) (bool, error) {
 	payload, err := json.Marshal(availabilityRequest{
-		DoctorID: doctorID,
-		Date:     date,
-		Time:     timeSlot,
+		DoctorID:        doctorID,
+		Date:            date,
+		Time:            timeSlot,
+		AppointmentType: appointmentType,
 	})
 	if err != nil {
 		return false, fmt.Errorf("marshal availability request: %w", err)

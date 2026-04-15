@@ -47,6 +47,8 @@ type Appointment struct {
 	DoctorName           string    `json:"doctorName"           bson:"doctorName"`                              // populated at booking time; used for human-readable notifications
 	DoctorEmail          string    `json:"doctorEmail"          bson:"doctorEmail"`                             // populated at booking time; used to notify doctor of reschedule
 	Specialty            string    `json:"specialty"            bson:"specialty"            binding:"required"` // e.g. "Cardiology"
+	AppointmentType      string    `json:"appointmentType"      bson:"appointmentType"      binding:"required"` // PHYSICAL | VIRTUAL
+	HospitalName         string    `json:"hospitalName,omitempty" bson:"hospitalName,omitempty"`
 	Date                 string    `json:"date"                 bson:"date"                 binding:"required"` // YYYY-MM-DD
 	Time                 string    `json:"time"                 bson:"time"                 binding:"required"` // HH:MM (24-hour)
 	Status               string    `json:"status"               bson:"status"`
@@ -54,6 +56,7 @@ type Appointment struct {
 	TransactionID        string    `json:"transactionId"        bson:"transactionId"`                  // payment-service transaction/session ID
 	CheckoutURL          string    `json:"checkoutUrl"          bson:"checkoutUrl"`                    // Stripe checkout URL shown to patient
 	ConsultationRoomName string    `json:"consultationRoomName" bson:"consultationRoomName"`           // LiveKit room name (set when BOOKED)
+	MeetingLink          string    `json:"meetingLink,omitempty" bson:"meetingLink,omitempty"`
 	RejectionReason      string    `json:"rejectionReason,omitempty" bson:"rejectionReason,omitempty"` // Doctor's reason for rejecting
 	CreatedAt            time.Time `json:"createdAt"            bson:"createdAt"`
 	UpdatedAt            time.Time `json:"updatedAt"            bson:"updatedAt"`
@@ -109,10 +112,13 @@ type DoctorAppointmentView struct {
 	ID                   string    `json:"id"`
 	PatientName          string    `json:"patientName"`
 	Specialty            string    `json:"specialty"`
+	AppointmentType      string    `json:"appointmentType"`
+	HospitalName         string    `json:"hospitalName,omitempty"`
 	Date                 string    `json:"date"`
 	Time                 string    `json:"time"`
 	Status               string    `json:"status"`
 	ConsultationRoomName string    `json:"consultationRoomName,omitempty"`
+	MeetingLink          string    `json:"meetingLink,omitempty"`
 	CreatedAt            time.Time `json:"createdAt"`
 }
 

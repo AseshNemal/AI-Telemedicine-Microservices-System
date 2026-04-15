@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"time"
 )
 
@@ -122,4 +123,9 @@ func (s *TelemedicineService) GetJoinToken(roomName, participantUID, participant
 	}
 
 	return &result, nil
+}
+
+// BuildJoinURL turns a LiveKit token response into the standard browser join URL.
+func (s *TelemedicineService) BuildJoinURL(wsURL, token string) string {
+	return "https://meet.livekit.io/custom?liveKitUrl=" + neturl.QueryEscape(wsURL) + "&token=" + neturl.QueryEscape(token)
 }
