@@ -36,7 +36,9 @@ function DashboardHeader({ role }: { role: "admin" | "doctor" }) {
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() || "";
   const isAdmin = pathname.startsWith("/admin");
-  const isDoctor = pathname.startsWith("/doctor");
+  // Match only the "/doctor" segment (e.g. "/doctor" or "/doctor/...")
+  // avoid matching "/doctors" which should use the public site header/footer
+  const isDoctor = /^\/doctor(\/|$)/.test(pathname);
 
   if (isAdmin || isDoctor) {
     return (
@@ -60,9 +62,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-8">
-          <Link href="/" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm">
-            <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-            Telemedicine
+          <Link href="/" className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm">
+            {/* Logo image: place your logo file at /public/logo.png */}
+            <img src="/logo.jpeg" alt="Telemedicine" className="h-auto w-auto object-contain  md:w-30" />
+            {/* Logo already includes the site name visually; keep an accessible label for screen readers */}
+            <span className="sr-only">Telemedicine</span>
           </Link>
           <MainNav />
           <HeaderAuthAction />
