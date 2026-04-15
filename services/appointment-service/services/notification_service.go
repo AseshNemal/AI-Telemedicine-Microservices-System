@@ -126,12 +126,12 @@ func (s *NotificationService) SendBookingConfirmation(appointmentID, patientEmai
 }
 
 // SendPaymentConfirmation notifies the patient that payment was successful and
-// their appointment is now confirmed (awaiting doctor acceptance).
+// their appointment is now booked.
 func (s *NotificationService) SendPaymentConfirmation(appointmentID, patientEmail, patientPhone, patientName, doctorDisplay, specialty, appointmentType, hospitalName, meetingLink, date, timeSlot string) {
 	publicID := readableAppointmentID(appointmentID)
-	subject := fmt.Sprintf("Payment Successful — Appointment %s Confirmed", publicID)
+	subject := fmt.Sprintf("Payment Successful — Appointment %s Booked", publicID)
 	body := fmt.Sprintf(
-		"Dear %s,\n\nYour payment has been received. Your appointment is now confirmed.\n\nAppointment Details:\n  Appointment ID: %s\n  Patient Name:   %s\n  Doctor:         Dr. %s\n  Specialty:      %s\n  Type:           %s\n  Date:           %s\n  Time:           %s\n  Status:         CONFIRMED\n  Payment Status: COMPLETED",
+		"Dear %s,\n\nYour payment has been received. Your appointment is now booked.\n\nAppointment Details:\n  Appointment ID: %s\n  Patient Name:   %s\n  Doctor:         Dr. %s\n  Specialty:      %s\n  Type:           %s\n  Date:           %s\n  Time:           %s\n  Status:         BOOKED\n  Payment Status: COMPLETED",
 		patientName, publicID, patientName, doctorDisplay, specialty, appointmentType, date, timeSlot,
 	)
 	if appointmentType == "PHYSICAL" && hospitalName != "" {
@@ -140,9 +140,9 @@ func (s *NotificationService) SendPaymentConfirmation(appointmentID, patientEmai
 	if appointmentType == "VIRTUAL" && meetingLink != "" {
 		body += fmt.Sprintf("\n  Meeting Link:   %s", meetingLink)
 	}
-	body += "\n\nYou will be notified once the doctor accepts or rejects your request."
+	body += "\n\nYou can join your consultation directly using your link."
 	s.sendEmail(patientEmail, subject, body)
-	sms := fmt.Sprintf("Payment confirmed for appt %s: Dr. %s, %s %s. Status CONFIRMED.", publicID, doctorDisplay, date, timeSlot)
+	sms := fmt.Sprintf("Payment confirmed for appt %s: Dr. %s, %s %s. Status BOOKED.", publicID, doctorDisplay, date, timeSlot)
 	if appointmentType == "PHYSICAL" && hospitalName != "" {
 		sms += " Hospital: " + hospitalName + "."
 	}
@@ -157,7 +157,7 @@ func (s *NotificationService) SendPaymentConfirmation(appointmentID, patientEmai
 func (s *NotificationService) SendStatusUpdate(appointmentID, patientEmail, patientPhone, doctorDisplay, date, timeSlot, newStatus, reason string) {
 	publicID := readableAppointmentID(appointmentID)
 	messages := map[string]string{
-		"BOOKED":    "Great news! Your appointment has been accepted by the doctor.",
+		"BOOKED":    "Great news! Your appointment is booked and ready.",
 		"REJECTED":  "Unfortunately, your appointment request was declined by the doctor. If you had already paid, a refund will be processed automatically. You may reschedule with the same or a different doctor at any time.",
 		"CANCELLED": "Your appointment has been cancelled.",
 		"COMPLETED": "Your consultation has been completed. Thank you for using our service.",
@@ -176,25 +176,25 @@ func (s *NotificationService) SendStatusUpdate(appointmentID, patientEmail, pati
 	s.sendSMS(patientPhone, fmt.Sprintf("Appointment %s is now %s. %s", publicID, newStatus, msg))
 }
 
-// SendRescheduleNotification notifies the patient that their reschedule is pending re-confirmation.
+// SendRescheduleNotification notifies the patient that their reschedule is booked.
 func (s *NotificationService) SendRescheduleNotification(appointmentID, patientEmail, patientPhone, doctorDisplay, newDate, newTime string) {
 	publicID := readableAppointmentID(appointmentID)
 	subject := fmt.Sprintf("Appointment %s — Rescheduled", publicID)
 	body := fmt.Sprintf(
-		"Your appointment with Dr. %s has been rescheduled to %s at %s and is awaiting re-confirmation.\n\nAppointment ID: %s",
+		"Your appointment with Dr. %s has been rescheduled to %s at %s and is booked.\n\nAppointment ID: %s",
 		doctorDisplay, newDate, newTime, publicID,
 	)
 	s.sendEmail(patientEmail, subject, body)
-	s.sendSMS(patientPhone, fmt.Sprintf("Appointment %s rescheduled to %s %s. Awaiting doctor reconfirmation.", publicID, newDate, newTime))
+	s.sendSMS(patientPhone, fmt.Sprintf("Appointment %s rescheduled to %s %s. Status BOOKED.", publicID, newDate, newTime))
 }
 
 // SendDoctorRescheduleAlert notifies the doctor that a patient has rescheduled
-// their appointment and that their acceptance is required again.
+// their appointment and that schedule details changed.
 func (s *NotificationService) SendDoctorRescheduleAlert(appointmentID, doctorEmail, patientName, newDate, newTime string) {
 	publicID := readableAppointmentID(appointmentID)
 	subject := fmt.Sprintf("Patient Rescheduled — Appointment %s", publicID)
 	body := fmt.Sprintf(
-		"Your patient %s has rescheduled appointment %s to %s at %s.\n\nPlease log in to accept or reject the new slot.",
+		"Your patient %s has rescheduled appointment %s to %s at %s.",
 		patientName, publicID, newDate, newTime,
 	)
 	s.sendEmail(doctorEmail, subject, body)

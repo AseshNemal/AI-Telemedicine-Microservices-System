@@ -8,9 +8,7 @@ import {
   Doctor,
   DoctorAvailability,
   MedicalReport,
-  doctorAcceptAppointment,
   doctorEndConsultation,
-  doctorRejectAppointment,
   doctorStartConsultation,
   getAppointmentsForDoctor,
   getConsultationToken,
@@ -274,45 +272,6 @@ export default function DoctorDashboardPage() {
       setError(err instanceof Error ? err.message : "Failed to load patient reports");
     } finally {
       setReportsLoadingId(null);
-    }
-  }
-
-  async function handleAccept(id: string) {
-    if (!idToken) {
-      setError("Please sign in again.");
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    setMessage(null);
-    try {
-      await doctorAcceptAppointment(id, idToken);
-      setMessage("Appointment accepted successfully.");
-      await loadDoctorAppointments();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to accept appointment");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleReject(id: string) {
-    if (!idToken) {
-      setError("Please sign in again.");
-      return;
-    }
-    if (!confirm("Are you sure you want to reject this appointment? The patient will be refunded automatically.")) return;
-    setLoading(true);
-    setError(null);
-    setMessage(null);
-    try {
-      await doctorRejectAppointment(id, idToken);
-      setMessage("Appointment rejected. The patient has been notified and will be refunded.");
-      await loadDoctorAppointments();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to reject appointment");
-    } finally {
-      setLoading(false);
     }
   }
 
@@ -673,16 +632,6 @@ export default function DoctorDashboardPage() {
                         </a>
                       </div>
                     )}
-                    {appointment.status === "CONFIRMED" && (
-                      <div className="flex gap-2">
-                        <button className="btn-primary text-xs" onClick={() => void handleAccept(appointment.id)} disabled={loading}>
-                          Accept
-                        </button>
-                        <button className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100" onClick={() => void handleReject(appointment.id)} disabled={loading}>
-                          Reject
-                        </button>
-                      </div>
-                    )}
                     {appointment.status === "BOOKED" && (
                       <div className="flex flex-wrap gap-2">
                         <button className="btn-primary text-xs" onClick={() => void handleStartConsultation(appointment.id)} disabled={loading}>
@@ -699,7 +648,7 @@ export default function DoctorDashboardPage() {
                         </button>
                       </div>
                     )}
-                    {appointment.status !== "CONFIRMED" && appointment.status !== "BOOKED" && (
+                    {appointment.status !== "BOOKED" && (
                       <span className="text-xs text-slate-500">{appointment.status === "COMPLETED" ? "Completed" : appointment.status === "REJECTED" ? "Rejected" : "—"}</span>
                     )}
                   </td>

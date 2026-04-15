@@ -136,6 +136,7 @@ func doctorDisplayName(appt models.Appointment) string {
 // the same consultation room. The two links point to the same room but use
 // different participant identities, so each person joins under their own token.
 func (h *Handler) buildVirtualMeetingLinks(appt models.Appointment) (patientLink, doctorLink, roomName string) {
+	// Room name is unique per appointment and stable for follow-up token requests.
 	roomName, err := h.telemediaSvc.CreateRoom(appt.ID)
 	if err != nil {
 		log.Printf("[appointment-service] failed to create consultation room for %s: %v", appt.ID, err)
@@ -146,24 +147,22 @@ func (h *Handler) buildVirtualMeetingLinks(appt models.Appointment) (patientLink
 		return "", "", ""
 	}
 
-	if joinToken, tokenErr := h.telemediaSvc.GetJoinToken(roomName, appt.PatientID, appt.PatientName); tokenErr != nil {
+	// Use page-based participant identity/name for pre-generated patient link.
+	patientIdentity := fmt.Sprintf("telemedicine-join-patient-%s", appt.ID)
+	patientName := "telemedicine/join/patient"
+	if joinToken, tokenErr := h.telemediaSvc.GetJoinToken(roomName, patientIdentity, patientName); tokenErr != nil {
 		log.Printf("[appointment-service] failed to mint patient join token for %s: %v", appt.ID, tokenErr)
 	} else {
 		patientLink = h.telemediaSvc.BuildJoinURL(joinToken.WsURL, joinToken.Token)
 	}
 
-	if doctorInfo, doctorErr := h.doctorSvc.GetDoctorByID(appt.DoctorID); doctorErr != nil {
-		log.Printf("[appointment-service] failed to fetch doctor info for %s while creating meeting link: %v", appt.DoctorID, doctorErr)
-	} else if strings.TrimSpace(doctorInfo.FirebaseUID) != "" {
-		doctorName := doctorInfo.Name
-		if doctorName == "" {
-			doctorName = "Doctor"
-		}
-		if joinToken, tokenErr := h.telemediaSvc.GetJoinToken(roomName, doctorInfo.FirebaseUID, doctorName); tokenErr != nil {
-			log.Printf("[appointment-service] failed to mint doctor join token for %s: %v", appt.ID, tokenErr)
-		} else {
-			doctorLink = h.telemediaSvc.BuildJoinURL(joinToken.WsURL, joinToken.Token)
-		}
+	// Use page-based participant identity/name for pre-generated doctor link.
+	doctorIdentity := fmt.Sprintf("telemedicine-join-doctor-%s", appt.ID)
+	doctorName := "telemedicine/join/doctor"
+	if joinToken, tokenErr := h.telemediaSvc.GetJoinToken(roomName, doctorIdentity, doctorName); tokenErr != nil {
+		log.Printf("[appointment-service] failed to mint doctor join token for %s: %v", appt.ID, tokenErr)
+	} else {
+		doctorLink = h.telemediaSvc.BuildJoinURL(joinToken.WsURL, joinToken.Token)
 	}
 
 	return patientLink, doctorLink, roomName
@@ -540,7 +539,7 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 	})
 }
 
-// ConfirmPayment transitions an appointment from PENDING_PAYMENT → CONFIRMED
+// ConfirmPayment transitions an appointment from PENDING_PAYMENT → BOOKED
 // after verifying that the Stripe checkout session was completed.
 //
 // POST /appointments/:id/confirm-payment
@@ -549,9 +548,9 @@ func (h *Handler) CreateAppointment(c *gin.Context) {
 //  1. Fetch appointment; verify caller is the owning patient (or admin).
 //  2. Guard: appointment must still be in PENDING_PAYMENT status.
 //  3. Call payment-service GET /payments/:transactionId to verify completion.
-//  4. On success: set status=CONFIRMED, paymentStatus=COMPLETED.
+//  4. On success: set status=BOOKED, paymentStatus=COMPLETED.
 //  5. Fire-and-forget notification to the patient.
-//  6. Return the confirmed appointment details.
+//  6. Return the booked appointment details.
 func (h *Handler) ConfirmPayment(c *gin.Context) {
 	id := c.Param("id")
 	if !validateID(c, id) {
@@ -628,7 +627,7 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 		patientMeetingLink, doctorMeetingLink, roomName = h.buildVirtualMeetingLinks(appt)
 	}
 
-	// Transition PENDING_PAYMENT → CONFIRMED.
+	// Transition PENDING_PAYMENT → BOOKED.
 	updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer updateCancel()
 
@@ -636,7 +635,7 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 		updateCtx,
 		bson.M{"id": id, "status": models.StatusPendingPayment}, // optimistic guard
 		bson.M{"$set": bson.M{
-			"status":               models.StatusConfirmed,
+			"status":               models.StatusBooked,
 			"paymentStatus":        models.PaymentCompleted,
 			"consultationRoomName": roomName,
 			"patientMeetingLink":   patientMeetingLink,
@@ -654,11 +653,11 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 		return
 	}
 
-	// Notify the patient: payment successful, appointment confirmed.
+	// Notify the patient: payment successful, appointment booked.
 	go h.notifSvc.SendPaymentConfirmation(appt.ID, appt.PatientEmail, appt.PatientPhone, appt.PatientName, doctorDisplayName(appt), appt.Specialty, appt.AppointmentType, appt.HospitalName, patientMeetingLink, appt.Date, appt.Time)
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Payment confirmed. Your appointment is now confirmed and awaiting the doctor's acceptance.",
+		"message": "Payment confirmed. Your appointment is now booked.",
 		"appointment": gin.H{
 			"id":                 appt.ID,
 			"patientName":        appt.PatientName,
@@ -668,7 +667,7 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 			"hospitalName":       appt.HospitalName,
 			"date":               appt.Date,
 			"time":               appt.Time,
-			"status":             models.StatusConfirmed,
+			"status":             models.StatusBooked,
 			"paymentStatus":      models.PaymentCompleted,
 			"patientMeetingLink": patientMeetingLink,
 			"doctorMeetingLink":  doctorMeetingLink,
@@ -767,7 +766,7 @@ func (h *Handler) ConfirmPaymentInternal(c *gin.Context) {
 		updateCtx,
 		bson.M{"id": id, "status": models.StatusPendingPayment},
 		bson.M{"$set": bson.M{
-			"status":               models.StatusConfirmed,
+			"status":               models.StatusBooked,
 			"paymentStatus":        models.PaymentCompleted,
 			"transactionId":        txnToVerify,
 			"consultationRoomName": roomName,
@@ -794,7 +793,7 @@ func (h *Handler) ConfirmPaymentInternal(c *gin.Context) {
 			"id":              appt.ID,
 			"appointmentType": appt.AppointmentType,
 			"hospitalName":    appt.HospitalName,
-			"status":          models.StatusConfirmed,
+			"status":          models.StatusBooked,
 			"paymentStatus":   models.PaymentCompleted,
 			"patientMeetingLink": patientMeetingLink,
 			"doctorMeetingLink":  doctorMeetingLink,
@@ -1302,8 +1301,11 @@ func (h *Handler) RescheduleAppointment(c *gin.Context) {
 		bson.M{"$set": bson.M{
 			"date":                 req.Date,
 			"time":                 req.Time,
-			"status":               models.StatusConfirmed, // payment already done; doctor must re-accept the new slot
-			"consultationRoomName": "",                     // clear stale LiveKit room from previous BOOKED state (issue #6)
+			"status":               models.StatusBooked,
+			"consultationRoomName": "",
+			"patientMeetingLink":   "",
+			"doctorMeetingLink":    "",
+			"meetingLink":          "",
 			"updatedAt":            time.Now().UTC(),
 		}},
 	)
@@ -1322,18 +1324,18 @@ func (h *Handler) RescheduleAppointment(c *gin.Context) {
 
 	log.Printf("[appointment-service] appointment %s rescheduled by patient %s to %s %s (reason: %s)", id, uid, req.Date, req.Time, req.Reason)
 
-	// Fire-and-forget notifications: patient confirmation + doctor alert (issue B7).
+	// Fire-and-forget notifications: patient confirmation + doctor alert.
 	go h.notifSvc.SendRescheduleNotification(appt.ID, appt.PatientEmail, appt.PatientPhone, doctorDisplayName(appt), req.Date, req.Time)
 	if appt.DoctorEmail != "" {
 		go h.notifSvc.SendDoctorRescheduleAlert(appt.ID, appt.DoctorEmail, appt.PatientName, req.Date, req.Time)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "appointment rescheduled; awaiting doctor re-confirmation",
+		"message": "appointment rescheduled and booked",
 		"id":      id,
 		"date":    req.Date,
 		"time":    req.Time,
-		"status":  models.StatusConfirmed,
+		"status":  models.StatusBooked,
 		"reason":  req.Reason,
 	})
 }
@@ -1457,21 +1459,7 @@ func (h *Handler) GetConsultationToken(c *gin.Context) {
 		return
 	}
 
-	// Enforce consultation access window: 30 min before to 2 hours after scheduled time (issue #12).
-	scheduled := appt.ScheduledTime()
-	now := time.Now().UTC()
-	windowStart := scheduled.Add(-30 * time.Minute)
-	windowEnd := scheduled.Add(2 * time.Hour)
-	if now.Before(windowStart) {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": fmt.Sprintf("consultation room is not yet open; you may join from %s UTC", windowStart.Format("2006-01-02 15:04")),
-		})
-		return
-	}
-	if now.After(windowEnd) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "consultation window has closed"})
-		return
-	}
+	// Consultation room can be joined any time once BOOKED.
 
 	// Sanitize optional ?name= query param for the LiveKit display name (issue #13, B5, B10).
 	displayName := strings.TrimSpace(c.Query("name"))

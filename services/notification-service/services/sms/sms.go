@@ -109,7 +109,7 @@ func (c *Client) SendSMS(to, message string) error {
 
 	if resp.StatusCode >= 400 {
 		b, _ := ioutil.ReadAll(resp.Body)
-		return errors.New(fmt.Sprintf("twilio error: status=%d body=%s", resp.StatusCode, string(b)))
+		return fmt.Errorf("twilio error: status=%d body=%s", resp.StatusCode, string(b))
 	}
 	return nil
 }

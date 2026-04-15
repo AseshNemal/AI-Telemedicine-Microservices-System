@@ -46,9 +46,9 @@ function PaymentSuccessContent() {
           // NOTE: /payments/verify already triggers internal appointment confirmation
           // in payment-service (notifyAppointmentPaymentConfirmed). Do not call
           // /appointments/:id/confirm-payment again here, otherwise the second call
-          // may return "not applicable ... status CONFIRMED" and look like a false error.
+          // may return "not applicable ... status BOOKED" and look like a false error.
           if (result.status === "COMPLETED") {
-            setMessage((prev) => (prev ? prev + " — appointment confirmation synced." : "Appointment confirmation synced."));
+            setMessage((prev) => (prev ? prev + " — appointment booking synced." : "Appointment booking synced."));
           }
         } catch (err) {
           setError(err instanceof Error ? err.message : "Payment verification failed");
