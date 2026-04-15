@@ -168,7 +168,7 @@ export default function PaymentPageClient({ paymentId }: PaymentPageClientProps)
     <main className="mx-auto max-w-7xl space-y-8 px-4 py-6 md:px-8 md:py-10">
       <section className="rounded-[28px] border border-slate-200 bg-gradient-to-br from-emerald-50 via-white to-cyan-50 p-7 shadow-sm md:p-10">
         <p className="text-xs uppercase tracking-[0.22em] text-slate-500">Telemedicine Checkout</p>
-        <h1 className="mt-3 text-3xl font-bold leading-tight text-slate-900 md:text-5xl">Payment for Reference: {paymentId}</h1>
+        <h1 className="mt-3 text-3xl font-bold leading-tight text-slate-900 md:text-5xl">Secure Payment</h1>
         <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600 md:text-base">
           Review the billing details below, continue to secure Stripe checkout, and return for instant payment status updates.
         </p>
@@ -225,7 +225,6 @@ export default function PaymentPageClient({ paymentId }: PaymentPageClientProps)
           payment={payment}
           draftAmount={Number(amount) || 0}
           draftCurrency={currency || "USD"}
-          appointmentId={payment?.appointmentId || paymentId}
         />
       </div>
     </main>

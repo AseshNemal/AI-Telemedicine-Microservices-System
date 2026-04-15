@@ -21,10 +21,18 @@ func NewHandler() *Handler {
 	twilioSID := os.Getenv("TWILIO_ACCOUNT_SID")
 	twilioToken := os.Getenv("TWILIO_AUTH_TOKEN")
 	twilioFrom := os.Getenv("TWILIO_FROM_NUMBER")
+	if twilioFrom == "" {
+		// Backward compatibility with existing .env naming.
+		twilioFrom = os.Getenv("TWILIO_PHONE_NUMBER")
+	}
 
 	// read env vars for Email (SendGrid)
 	sendgridKey := os.Getenv("SENDGRID_API_KEY")
 	sendgridFrom := os.Getenv("SENDGRID_FROM_EMAIL")
+	if sendgridFrom == "" {
+		// Backward compatibility with existing .env naming.
+		sendgridFrom = os.Getenv("SENDGRID_SENDER_EMAIL")
+	}
 
 	var smsClient *smssvc.Client
 	if twilioSID != "" && twilioToken != "" && twilioFrom != "" {

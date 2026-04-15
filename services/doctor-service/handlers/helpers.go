@@ -39,10 +39,55 @@ func dbReady(db *database.Client) bool {
 	return db != nil && db.IsConnected()
 }
 
-// callerUID extracts the authenticated user's UID from the Gin context.
+// callerUID extracts the authenticated user's UID from the Gin context (middleware-set).
 func callerUID(c *gin.Context) string {
 	uid, _ := c.Get(middleware.CtxUID)
 	return fmt.Sprint(uid)
+}
+
+// extractBearerUID extracts Firebase UID from Authorization Bearer token by verifying with auth-service.
+func extractBearerUID(c *gin.Context) string {
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+		return ""
+	}
+
+	// Call auth-service to verify token and get UID (same approach as middleware)
+	baseURL := os.Getenv("AUTH_SERVICE_URL")
+	if baseURL == "" {
+		baseURL = "http://localhost:8081"
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/auth/me", nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Authorization", authHeader)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	var me struct {
+		Success bool `json:"success"`
+		Data    struct {
+			UID  string `json:"uid"`
+			Role string `json:"role"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&me); err != nil || !me.Success {
+		return ""
+	}
+
+	return me.Data.UID
 }
 
 // svcURL resolves a service URL from an env var, falling back to the default.
@@ -244,6 +289,60 @@ func (h *Handler) UpdateDoctor(c *gin.Context) {
 	var updated models.Doctor
 	_ = h.db.DB.Collection("doctors").FindOne(ctx, bson.M{"id": id}).Decode(&updated)
 	c.JSON(http.StatusOK, updated)
+}
+
+// InitializeDoctorProfile creates a skeleton profile if one doesn't exist (POST /doctor/profile/initialize).
+func (h *Handler) InitializeDoctorProfile(c *gin.Context) {
+	if !dbReady(h.db) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database not connected"})
+		return
+	}
+
+	firebaseUID := callerUID(c)
+	if firebaseUID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Check if doctor profile already exists
+	existing := h.db.DB.Collection("doctors").FindOne(ctx, bson.M{"firebase_uid": firebaseUID})
+	if existing.Err() == nil {
+		// Profile already exists, just return it
+		var doc models.Doctor
+		existing.Decode(&doc)
+		c.JSON(http.StatusOK, doc)
+		return
+	}
+
+	if existing.Err() != mongo.ErrNoDocuments {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to check doctor profile"})
+		return
+	}
+
+	// Create new skeleton profile
+	id := generateID("doc")
+	now := time.Now().UTC()
+	newDoc := models.Doctor{
+		ID:                   id,
+		FirebaseUID:          firebaseUID,
+		Name:                 "",
+		Specialty:            "",
+		ExperienceYears:      0,
+		ConsultationFeeCents: 0,
+		VerificationStatus:   models.StatusPending,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+	}
+
+	if _, err := h.db.DB.Collection("doctors").InsertOne(ctx, newDoc); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to initialize doctor profile"})
+		return
+	}
+
+	c.JSON(http.StatusOK, newDoc)
 }
 
 // GetMyDoctorProfile returns the authenticated doctor's own profile (GET /doctor/profile).

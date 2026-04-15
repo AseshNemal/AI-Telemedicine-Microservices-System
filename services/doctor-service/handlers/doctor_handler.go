@@ -150,7 +150,10 @@ func (h *Handler) GetAvailability(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch doctor"})
 		return
 	}
-	if doc.VerificationStatus != models.StatusVerified {
+	// Allow access if doctor is VERIFIED, or if the requester is the doctor themselves
+	firebaseUID := extractBearerUID(c)
+	isOwner := firebaseUID != "" && firebaseUID == doc.FirebaseUID
+	if doc.VerificationStatus != models.StatusVerified && !isOwner {
 		c.JSON(http.StatusForbidden, gin.H{"error": "doctor is not available"})
 		return
 	}
@@ -203,10 +206,7 @@ func (h *Handler) SetAvailability(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "you do not own this profile"})
 		return
 	}
-	if existing.VerificationStatus != models.StatusVerified {
-		c.JSON(http.StatusForbidden, gin.H{"error": "only verified doctors can set availability"})
-		return
-	}
+	// Allow PENDING doctors to set their availability (no verification required for own profile)
 
 	var slots []models.AvailabilitySlot
 	if err := c.ShouldBindJSON(&slots); err != nil {

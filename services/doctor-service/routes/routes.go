@@ -75,6 +75,7 @@ func RegisterRoutes(router *gin.Engine, h *handlers.Handler) {
 		doctor.Use(middleware.RequireRole("DOCTOR"))
 		{
 			doctor.GET("/appointments", h.GetMyAppointments)
+			doctor.POST("/profile/initialize", h.InitializeDoctorProfile)
 			doctor.GET("/profile", h.GetMyDoctorProfile)
 			doctor.PUT("/profile", h.UpdateMyDoctorProfile)
 			doctor.POST("/appointments/:appointment_id/accept", h.AcceptAppointment)

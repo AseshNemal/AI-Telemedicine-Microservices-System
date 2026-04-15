@@ -215,6 +215,20 @@ export default function AppointmentManagement() {
     }
   }
 
+  function shortId(value: string, keepStart = 4, keepEnd = 4) {
+    const trimmed = value?.trim() || "";
+    if (trimmed.length <= keepStart + keepEnd + 3) return trimmed;
+    return `${trimmed.slice(0, keepStart)}...${trimmed.slice(-keepEnd)}`;
+  }
+
+  function displayDoctorName(apt: Appointment) {
+    return apt.doctorName?.trim() || shortId(apt.doctorId);
+  }
+
+  function displayPatientName(apt: Appointment) {
+    return apt.patientName?.trim() || shortId(apt.patientId);
+  }
+
   // Get status badge color
   function getStatusColor(status: string) {
     switch (status?.toUpperCase()) {
@@ -277,8 +291,8 @@ export default function AppointmentManagement() {
             <article key={apt.id} className="surface-card cursor-pointer transition hover:shadow-md" onClick={() => setSelectedAppointment(apt)}>
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <h3 className="font-semibold text-slate-900">Doctor: {apt.doctorId}</h3>
-                  <p className="mt-1 text-sm text-slate-600">Patient: {apt.patientId}</p>
+                  <h3 className="font-semibold text-slate-900">Doctor: {displayDoctorName(apt)}</h3>
+                  <p className="mt-1 text-sm text-slate-600">Patient: {displayPatientName(apt)}</p>
                   <p className="mt-1 text-sm text-slate-600">{formatDateTime(apt.date, apt.time)}</p>
                   <p className={`mt-2 text-xs font-semibold uppercase tracking-[0.12em] ${getStatusColor(apt.status)}`}>
                     {apt.status}
@@ -322,9 +336,8 @@ export default function AppointmentManagement() {
 
           <h3 className="text-lg font-semibold text-slate-900">Appointment Details</h3>
           <div className="mt-4 space-y-2 text-sm text-slate-700">
-            <p><strong>ID:</strong> {selectedAppointment.id}</p>
-            <p><strong>Doctor:</strong> {selectedAppointment.doctorId}</p>
-            <p><strong>Patient:</strong> {selectedAppointment.patientId}</p>
+            <p><strong>Doctor:</strong> {displayDoctorName(selectedAppointment)}</p>
+            <p><strong>Patient:</strong> {displayPatientName(selectedAppointment)}</p>
             <p><strong>Time:</strong> {formatDateTime(selectedAppointment.date, selectedAppointment.time)}</p>
             <p className={`font-semibold ${getStatusColor(selectedAppointment.status)}`}>
               Status: {selectedAppointment.status}

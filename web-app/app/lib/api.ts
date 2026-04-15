@@ -105,9 +105,11 @@ export type PaymentCreateResponse = {
 
 export type PaymentVerifyResponse = {
   message: string;
-  sessionId: string;
+  sessionId?: string;
   paymentStatus: string;
   status: string;
+  appointmentId?: string;
+  transactionId?: string;
 };
 
 export type DoctorAccountCreateRequest = {
@@ -227,9 +229,14 @@ export async function getDoctors(specialty?: string): Promise<Doctor[]> {
   return res.json();
 }
 
-export async function getDoctorAvailability(doctorId: string): Promise<DoctorAvailability[]> {
+export async function getDoctorAvailability(doctorId: string, idToken?: string): Promise<DoctorAvailability[]> {
+  const headers: HeadersInit = {};
+  if (idToken) {
+    headers["Authorization"] = `Bearer ${idToken}`;
+  }
   const res = await fetch(`${doctorBase}/doctors/${encodeURIComponent(doctorId)}/availability`, {
     cache: "no-store",
+    headers,
   });
   if (!res.ok) {
     const message = await safeMessage(res);
@@ -271,6 +278,22 @@ export async function getMyDoctorProfile(idToken: string): Promise<Doctor> {
   if (!res.ok) {
     const message = await safeMessage(res);
     throw new Error(message || `Failed to fetch doctor profile (${res.status})`);
+  }
+
+  return res.json();
+}
+
+export async function initializeDoctorProfile(idToken: string): Promise<Doctor> {
+  const res = await fetch(`${doctorBase}/doctor/profile/initialize`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    const message = await safeMessage(res);
+    throw new Error(message || `Failed to initialize doctor profile (${res.status})`);
   }
 
   return res.json();
@@ -394,7 +417,15 @@ export async function createAppointment(payload: {
     throw new Error(message || `Failed to create appointment (${res.status})`);
   }
 
-  return res.json();
+  const data = await res.json();
+  const appointment = data?.appointment ?? data;
+
+  return {
+    ...data,
+    id: appointment?.id ?? data?.id,
+    appointment,
+    checkoutUrl: data?.checkoutUrl ?? appointment?.checkoutUrl ?? "",
+  };
 }
 
 export async function getAppointments(idToken: string): Promise<Appointment[]> {

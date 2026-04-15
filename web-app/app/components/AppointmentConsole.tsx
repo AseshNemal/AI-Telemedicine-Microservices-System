@@ -54,7 +54,7 @@ export default function AppointmentConsole({ initialAppointments }: AppointmentC
         date,
         time,
       }, idToken);
-      setMessage(`Booked: ${created.id}`);
+      setMessage("Appointment booked successfully");
       setDate("");
       setTime("");
       await load(idToken);

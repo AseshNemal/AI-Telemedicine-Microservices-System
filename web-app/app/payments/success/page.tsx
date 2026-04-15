@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { onAuthStateChanged } from "firebase/auth";
-import { verifyPayment, confirmAppointmentPayment } from "@/app/lib/api";
+import { verifyPayment } from "@/app/lib/api";
 import { getFirebaseAuth } from "@/app/lib/firebaseClient";
 
 function PaymentSuccessContent() {
@@ -18,7 +18,7 @@ function PaymentSuccessContent() {
   useEffect(() => {
     async function runVerification() {
       if (!sessionId) {
-        setError("Missing session_id in URL");
+        setError("Missing payment reference in URL");
         setMessage("Verification could not start.");
         return;
       }
@@ -43,27 +43,12 @@ function PaymentSuccessContent() {
           setMessage(result.message || "Payment verified");
           setStatus(result.status);
 
-          // If payment is completed and we have an appointmentId, attempt to
-          // auto-confirm the appointment so the UI updates and payment buttons
-          // are removed without requiring a manual "I have paid" click.
+          // NOTE: /payments/verify already triggers internal appointment confirmation
+          // in payment-service (notifyAppointmentPaymentConfirmed). Do not call
+          // /appointments/:id/confirm-payment again here, otherwise the second call
+          // may return "not applicable ... status CONFIRMED" and look like a false error.
           if (result.status === "COMPLETED") {
-            const maybe = result as unknown as { appointmentId?: string };
-            if (maybe.appointmentId) {
-              const appointmentId = maybe.appointmentId as string;
-              try {
-                const auth = getFirebaseAuth();
-                const user = auth.currentUser;
-                if (user) {
-                  const idToken = await user.getIdToken();
-                  await confirmAppointmentPayment(appointmentId, idToken);
-                  setMessage((prev) => (prev ? prev + " — appointment confirmed." : "Appointment confirmed."));
-                } else {
-                  setMessage((prev) => (prev ? prev + " — please sign in to finalize appointment confirmation." : "Please sign in to finalize appointment confirmation."));
-                }
-              } catch (err) {
-                setError(err instanceof Error ? err.message : "Failed to auto-confirm appointment");
-              }
-            }
+            setMessage((prev) => (prev ? prev + " — appointment confirmation synced." : "Appointment confirmation synced."));
           }
         } catch (err) {
           setError(err instanceof Error ? err.message : "Payment verification failed");
@@ -83,7 +68,6 @@ function PaymentSuccessContent() {
       </section>
 
       <section className="surface-card text-sm">
-        <p><strong>Session ID:</strong> {sessionId || "N/A"}</p>
         <p className="mt-2"><strong>Message:</strong> {message}</p>
         {status && <p className="mt-2"><strong>Internal Status:</strong> {status}</p>}
         {error && <p className="mt-2 text-red-700"><strong>Error:</strong> {error}</p>}

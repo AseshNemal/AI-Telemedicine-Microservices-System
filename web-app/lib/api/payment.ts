@@ -39,9 +39,11 @@ export type CreatePaymentResult = {
 
 export type VerifyPaymentResult = {
   message: string;
-  sessionId: string;
+  sessionId?: string;
   paymentStatus: string;
   status: string;
+  appointmentId?: string;
+  transactionId?: string;
 };
 
 const paymentBase = resolveServiceBase(

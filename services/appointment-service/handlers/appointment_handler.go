@@ -64,6 +64,9 @@ func NewHandler(db *database.Client) *Handler {
 	notifBase := os.Getenv("NOTIFICATION_SERVICE_URL")
 	if notifBase == "" {
 		notifBase = "http://localhost:8084"
+	} else if strings.Contains(notifBase, "notification-service") {
+		// Local dev fallback: docker/k8s-style hostname is not resolvable on host shell.
+		notifBase = "http://localhost:8084"
 	}
 
 	telemediaBase := os.Getenv("TELEMEDICINE_SERVICE_URL")
@@ -506,6 +509,23 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 	}
 
 	if appt.Status != models.StatusPendingPayment {
+		// Idempotent success for repeated confirmation attempts after payment was already processed.
+		if appt.Status == models.StatusConfirmed || appt.Status == models.StatusBooked || appt.Status == models.StatusCompleted {
+			c.JSON(http.StatusOK, gin.H{
+				"message": "appointment already confirmed",
+				"appointment": gin.H{
+					"id":            appt.ID,
+					"patientName":   appt.PatientName,
+					"doctorId":      appt.DoctorID,
+					"specialty":     appt.Specialty,
+					"date":          appt.Date,
+					"time":          appt.Time,
+					"status":        appt.Status,
+					"paymentStatus": appt.PaymentStatus,
+				},
+			})
+			return
+		}
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": fmt.Sprintf("payment confirmation is not applicable for appointments with status %s", appt.Status),
 		})
@@ -1327,9 +1347,9 @@ type scheduleSummaryDate struct {
 }
 
 type scheduleSummarySlot struct {
-	Time       string `json:"time"`
-	BookedCount int   `json:"bookedCount"`
-	Available  bool   `json:"available"`
+	Time        string `json:"time"`
+	BookedCount int    `json:"bookedCount"`
+	Available   bool   `json:"available"`
 }
 
 // GetDoctorScheduleSummary returns real booking-aware availability for a doctor.

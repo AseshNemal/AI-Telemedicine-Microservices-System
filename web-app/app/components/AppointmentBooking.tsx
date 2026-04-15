@@ -22,7 +22,6 @@ export default function AppointmentBooking() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [latestCheckoutUrl, setLatestCheckoutUrl] = useState<string | null>(null);
-  const [latestAppointmentId, setLatestAppointmentId] = useState<string | null>(null);
   const [idToken, setIdToken] = useState<string | null>(null);
   const [patientName, setPatientName] = useState("");
   const [patientEmail, setPatientEmail] = useState("");
@@ -154,7 +153,6 @@ export default function AppointmentBooking() {
     setError(null);
     setMessage(null);
     setLatestCheckoutUrl(null);
-    setLatestAppointmentId(null);
 
     try {
       const appointment = await createAppointment({
@@ -166,14 +164,10 @@ export default function AppointmentBooking() {
         date,
         time,
       }, idToken);
-      setMessage(`✓ Appointment booked successfully (ID: ${appointment.id})`);
+      const appointmentId = appointment.id || appointment.appointment?.id;
+      setMessage("✓ Appointment booked successfully");
       if (appointment.checkoutUrl && appointment.checkoutUrl.startsWith("https://checkout.stripe.com/")) {
         setLatestCheckoutUrl(appointment.checkoutUrl);
-      }
-      if (appointment.appointment && appointment.appointment.id) {
-        setLatestAppointmentId(appointment.appointment.id);
-      } else if (appointment.id) {
-        setLatestAppointmentId(appointment.id);
       }
       setDate("");
       setTime("");
@@ -258,7 +252,7 @@ export default function AppointmentBooking() {
                 window.location.href = latestCheckoutUrl;
               }}
             >
-              Proceed to payment{latestAppointmentId ? ` (${latestAppointmentId})` : ""}
+              Proceed to payment
             </button>
           )}
 

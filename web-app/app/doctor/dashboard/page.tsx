@@ -17,6 +17,7 @@ import {
   getDoctorAvailability,
   getDoctorPatientReports,
   getMyDoctorProfile,
+  initializeDoctorProfile,
   getMe,
   updateDoctorAvailability,
   updateMyDoctorProfile,
@@ -100,10 +101,21 @@ export default function DoctorDashboardPage() {
         }
 
         setDisplayName(me?.data?.fullName || user.displayName || "Doctor");
-        const [profile, data] = await Promise.all([
-          getMyDoctorProfile(token).catch(() => null),
-          getAppointments(token),
-        ]);
+        
+        let profile = null;
+        try {
+          profile = await getMyDoctorProfile(token);
+        } catch (fetchErr) {
+          // If profile doesn't exist, try to initialize it
+          try {
+            profile = await initializeDoctorProfile(token);
+          } catch (initErr) {
+            console.error("Failed to fetch and initialize profile:", fetchErr, initErr);
+            setError("Doctor profile not found and could not be auto-created. Please contact support.");
+          }
+        }
+        
+        const data = await getAppointments(token);
         if (profile) {
           setDoctorProfile(profile);
           setProfileForm({
@@ -115,7 +127,10 @@ export default function DoctorDashboardPage() {
           setDisplayName(profile.name || me?.data?.fullName || user.displayName || "Doctor");
 
           if (profile.id) {
-            const availability = await getDoctorAvailability(profile.id).catch(() => []);
+            const availability = await getDoctorAvailability(profile.id, token).catch((err) => {
+              console.error("Failed to fetch availability:", err);
+              return [];
+            });
             setAvailabilityForm(buildAvailabilityForm(Array.isArray(availability) ? availability : []));
           }
         }

@@ -7,9 +7,13 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Load shared workspace .env when running locally from service directory.
+	_ = godotenv.Load("../../.env")
+
 	h := handlers.NewHandler()
 	router := gin.Default()
 	routes.RegisterRoutes(router, h)
