@@ -56,6 +56,8 @@ type Appointment struct {
 	TransactionID        string    `json:"transactionId"        bson:"transactionId"`                  // payment-service transaction/session ID
 	CheckoutURL          string    `json:"checkoutUrl"          bson:"checkoutUrl"`                    // Stripe checkout URL shown to patient
 	ConsultationRoomName string    `json:"consultationRoomName" bson:"consultationRoomName"`           // LiveKit room name (set when BOOKED)
+	PatientMeetingLink   string    `json:"patientMeetingLink,omitempty" bson:"patientMeetingLink,omitempty"`
+	DoctorMeetingLink    string    `json:"doctorMeetingLink,omitempty" bson:"doctorMeetingLink,omitempty"`
 	MeetingLink          string    `json:"meetingLink,omitempty" bson:"meetingLink,omitempty"`
 	RejectionReason      string    `json:"rejectionReason,omitempty" bson:"rejectionReason,omitempty"` // Doctor's reason for rejecting
 	CreatedAt            time.Time `json:"createdAt"            bson:"createdAt"`
@@ -118,6 +120,8 @@ type DoctorAppointmentView struct {
 	Time                 string    `json:"time"`
 	Status               string    `json:"status"`
 	ConsultationRoomName string    `json:"consultationRoomName,omitempty"`
+	PatientMeetingLink   string    `json:"patientMeetingLink,omitempty"`
+	DoctorMeetingLink    string    `json:"doctorMeetingLink,omitempty"`
 	MeetingLink          string    `json:"meetingLink,omitempty"`
 	CreatedAt            time.Time `json:"createdAt"`
 }

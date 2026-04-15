@@ -941,17 +941,6 @@ func (h *Handler) StartConsultation(c *gin.Context) {
 		return
 	}
 
-	// 15-minute early-start guard
-	dateStr, _ := appt["date"].(string)
-	timeStr, _ := appt["time"].(string)
-	if dateStr != "" && timeStr != "" {
-		scheduled, parseErr := time.ParseInLocation("2006-01-02 15:04", dateStr+" "+timeStr, time.UTC)
-		if parseErr == nil && time.Until(scheduled) > 15*time.Minute {
-			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "cannot start consultation more than 15 minutes before scheduled time"})
-			return
-		}
-	}
-
 	patientID, _ := appt["patientId"].(string)
 
 	// Call Telemedicine Service — if it fails, do NOT persist consultation row

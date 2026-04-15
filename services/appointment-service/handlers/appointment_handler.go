@@ -112,6 +112,17 @@ func callerRole(c *gin.Context) string {
 	return fmt.Sprint(role)
 }
 
+func (h *Handler) isCallerDoctorForAppointment(c *gin.Context, appt models.Appointment) bool {
+	if callerRole(c) != roleDoctor {
+		return false
+	}
+	doctorProfile, err := h.doctorSvc.GetDoctorByID(appt.DoctorID)
+	if err != nil {
+		return false
+	}
+	return doctorProfile.FirebaseUID == callerUID(c)
+}
+
 // doctorDisplayName returns the doctor's name for display in notifications.
 // Falls back to the DoctorID for appointments created before DoctorName was stored.
 func doctorDisplayName(appt models.Appointment) string {
@@ -119,6 +130,43 @@ func doctorDisplayName(appt models.Appointment) string {
 		return appt.DoctorName
 	}
 	return appt.DoctorID
+}
+
+// buildVirtualMeetingLinks creates separate patient and doctor join URLs for
+// the same consultation room. The two links point to the same room but use
+// different participant identities, so each person joins under their own token.
+func (h *Handler) buildVirtualMeetingLinks(appt models.Appointment) (patientLink, doctorLink, roomName string) {
+	roomName, err := h.telemediaSvc.CreateRoom(appt.ID)
+	if err != nil {
+		log.Printf("[appointment-service] failed to create consultation room for %s: %v", appt.ID, err)
+		return "", "", ""
+	}
+
+	if roomName == "" {
+		return "", "", ""
+	}
+
+	if joinToken, tokenErr := h.telemediaSvc.GetJoinToken(roomName, appt.PatientID, appt.PatientName); tokenErr != nil {
+		log.Printf("[appointment-service] failed to mint patient join token for %s: %v", appt.ID, tokenErr)
+	} else {
+		patientLink = h.telemediaSvc.BuildJoinURL(joinToken.WsURL, joinToken.Token)
+	}
+
+	if doctorInfo, doctorErr := h.doctorSvc.GetDoctorByID(appt.DoctorID); doctorErr != nil {
+		log.Printf("[appointment-service] failed to fetch doctor info for %s while creating meeting link: %v", appt.DoctorID, doctorErr)
+	} else if strings.TrimSpace(doctorInfo.FirebaseUID) != "" {
+		doctorName := doctorInfo.Name
+		if doctorName == "" {
+			doctorName = "Doctor"
+		}
+		if joinToken, tokenErr := h.telemediaSvc.GetJoinToken(roomName, doctorInfo.FirebaseUID, doctorName); tokenErr != nil {
+			log.Printf("[appointment-service] failed to mint doctor join token for %s: %v", appt.ID, tokenErr)
+		} else {
+			doctorLink = h.telemediaSvc.BuildJoinURL(joinToken.WsURL, joinToken.Token)
+		}
+	}
+
+	return patientLink, doctorLink, roomName
 }
 
 // validateID rejects obviously malformed appointment IDs before a DB round-trip (issue G2).
@@ -573,20 +621,11 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 		return
 	}
 
-	meetingLink := ""
+	patientMeetingLink := ""
+	doctorMeetingLink := ""
 	roomName := ""
 	if strings.EqualFold(appt.AppointmentType, "VIRTUAL") {
-		var createErr error
-		roomName, createErr = h.telemediaSvc.CreateRoom(appt.ID)
-		if createErr != nil {
-			log.Printf("[appointment-service] failed to create consultation room for %s: %v", id, createErr)
-		} else if roomName != "" {
-			if joinToken, tokenErr := h.telemediaSvc.GetJoinToken(roomName, appt.PatientID, appt.PatientName); tokenErr != nil {
-				log.Printf("[appointment-service] failed to mint join token for %s: %v", id, tokenErr)
-			} else {
-				meetingLink = h.telemediaSvc.BuildJoinURL(joinToken.WsURL, joinToken.Token)
-			}
-		}
+		patientMeetingLink, doctorMeetingLink, roomName = h.buildVirtualMeetingLinks(appt)
 	}
 
 	// Transition PENDING_PAYMENT → CONFIRMED.
@@ -600,7 +639,9 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 			"status":               models.StatusConfirmed,
 			"paymentStatus":        models.PaymentCompleted,
 			"consultationRoomName": roomName,
-			"meetingLink":          meetingLink,
+			"patientMeetingLink":   patientMeetingLink,
+			"doctorMeetingLink":    doctorMeetingLink,
+			"meetingLink":          patientMeetingLink,
 			"updatedAt":            time.Now().UTC(),
 		}},
 	)
@@ -614,22 +655,24 @@ func (h *Handler) ConfirmPayment(c *gin.Context) {
 	}
 
 	// Notify the patient: payment successful, appointment confirmed.
-	go h.notifSvc.SendPaymentConfirmation(appt.ID, appt.PatientEmail, appt.PatientPhone, appt.PatientName, doctorDisplayName(appt), appt.Specialty, appt.AppointmentType, appt.HospitalName, meetingLink, appt.Date, appt.Time)
+	go h.notifSvc.SendPaymentConfirmation(appt.ID, appt.PatientEmail, appt.PatientPhone, appt.PatientName, doctorDisplayName(appt), appt.Specialty, appt.AppointmentType, appt.HospitalName, patientMeetingLink, appt.Date, appt.Time)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Payment confirmed. Your appointment is now confirmed and awaiting the doctor's acceptance.",
 		"appointment": gin.H{
-			"id":              appt.ID,
-			"patientName":     appt.PatientName,
-			"doctorId":        appt.DoctorID,
-			"specialty":       appt.Specialty,
-			"appointmentType": appt.AppointmentType,
-			"hospitalName":    appt.HospitalName,
-			"date":            appt.Date,
-			"time":            appt.Time,
-			"status":          models.StatusConfirmed,
-			"paymentStatus":   models.PaymentCompleted,
-			"meetingLink":     meetingLink,
+			"id":                 appt.ID,
+			"patientName":        appt.PatientName,
+			"doctorId":           appt.DoctorID,
+			"specialty":          appt.Specialty,
+			"appointmentType":    appt.AppointmentType,
+			"hospitalName":       appt.HospitalName,
+			"date":               appt.Date,
+			"time":               appt.Time,
+			"status":             models.StatusConfirmed,
+			"paymentStatus":      models.PaymentCompleted,
+			"patientMeetingLink": patientMeetingLink,
+			"doctorMeetingLink":  doctorMeetingLink,
+			"meetingLink":        patientMeetingLink,
 		},
 	})
 }
@@ -710,19 +753,11 @@ func (h *Handler) ConfirmPaymentInternal(c *gin.Context) {
 		return
 	}
 
-	meetingLink := ""
+	patientMeetingLink := ""
+	doctorMeetingLink := ""
 	roomName := ""
 	if strings.EqualFold(appt.AppointmentType, "VIRTUAL") {
-		if createdRoom, createErr := h.telemediaSvc.CreateRoom(appt.ID); createErr != nil {
-			log.Printf("[appointment-service] failed to create consultation room for %s: %v", id, createErr)
-		} else {
-			roomName = createdRoom
-			if joinToken, tokenErr := h.telemediaSvc.GetJoinToken(roomName, appt.PatientID, appt.PatientName); tokenErr != nil {
-				log.Printf("[appointment-service] failed to mint join token for %s: %v", id, tokenErr)
-			} else {
-				meetingLink = h.telemediaSvc.BuildJoinURL(joinToken.WsURL, joinToken.Token)
-			}
-		}
+		patientMeetingLink, doctorMeetingLink, roomName = h.buildVirtualMeetingLinks(appt)
 	}
 
 	updateCtx, updateCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -736,7 +771,9 @@ func (h *Handler) ConfirmPaymentInternal(c *gin.Context) {
 			"paymentStatus":        models.PaymentCompleted,
 			"transactionId":        txnToVerify,
 			"consultationRoomName": roomName,
-			"meetingLink":          meetingLink,
+			"patientMeetingLink":   patientMeetingLink,
+			"doctorMeetingLink":    doctorMeetingLink,
+			"meetingLink":          patientMeetingLink,
 			"updatedAt":            time.Now().UTC(),
 		}},
 	)
@@ -749,7 +786,7 @@ func (h *Handler) ConfirmPaymentInternal(c *gin.Context) {
 		return
 	}
 
-	go h.notifSvc.SendPaymentConfirmation(appt.ID, appt.PatientEmail, appt.PatientPhone, appt.PatientName, doctorDisplayName(appt), appt.Specialty, appt.AppointmentType, appt.HospitalName, meetingLink, appt.Date, appt.Time)
+	go h.notifSvc.SendPaymentConfirmation(appt.ID, appt.PatientEmail, appt.PatientPhone, appt.PatientName, doctorDisplayName(appt), appt.Specialty, appt.AppointmentType, appt.HospitalName, patientMeetingLink, appt.Date, appt.Time)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Payment confirmed automatically.",
@@ -759,7 +796,9 @@ func (h *Handler) ConfirmPaymentInternal(c *gin.Context) {
 			"hospitalName":    appt.HospitalName,
 			"status":          models.StatusConfirmed,
 			"paymentStatus":   models.PaymentCompleted,
-			"meetingLink":     meetingLink,
+			"patientMeetingLink": patientMeetingLink,
+			"doctorMeetingLink":  doctorMeetingLink,
+			"meetingLink":        patientMeetingLink,
 		},
 	})
 }
@@ -784,7 +823,7 @@ func (h *Handler) GetAppointmentByID(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
 		return
 	}
-	if role == roleDoctor && appt.DoctorID != uid {
+	if role == roleDoctor && !h.isCallerDoctorForAppointment(c, appt) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
 		return
 	}
@@ -1013,6 +1052,8 @@ func (h *Handler) GetAppointmentsByDoctorID(c *gin.Context) {
 			Time:                 r.Time,
 			Status:               r.Status,
 			ConsultationRoomName: r.ConsultationRoomName,
+			PatientMeetingLink:   r.PatientMeetingLink,
+			DoctorMeetingLink:    r.DoctorMeetingLink,
 			MeetingLink:          r.MeetingLink,
 			CreatedAt:            r.CreatedAt,
 		}
@@ -1049,7 +1090,7 @@ func (h *Handler) UpdateAppointmentStatus(c *gin.Context) {
 	// ── Authorization per role ──────────────────────────────────────────────────
 	switch role {
 	case roleDoctor:
-		if appt.DoctorID != uid {
+		if !h.isCallerDoctorForAppointment(c, appt) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "you are not the doctor for this appointment"})
 			return
 		}
@@ -1394,7 +1435,7 @@ func (h *Handler) GetConsultationToken(c *gin.Context) {
 			return
 		}
 	case roleDoctor:
-		if appt.DoctorID != uid {
+		if !h.isCallerDoctorForAppointment(c, appt) {
 			c.JSON(http.StatusForbidden, gin.H{"error": "you are not the doctor for this appointment"})
 			return
 		}

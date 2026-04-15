@@ -299,9 +299,9 @@ export default function AppointmentManagement() {
                     {apt.appointmentType === "PHYSICAL" && apt.hospitalName ? ` • ${apt.hospitalName}` : ""}
                   </p>
                   {apt.appointmentType === "VIRTUAL" ? (
-                    apt.meetingLink ? (
+                    (apt.patientMeetingLink || apt.meetingLink) ? (
                       <p className="mt-1 text-sm text-blue-600">
-                        <a href={apt.meetingLink} target="_blank" rel="noreferrer">Join link</a>
+                        <a href={apt.patientMeetingLink || apt.meetingLink} target="_blank" rel="noreferrer">Your join link</a>
                       </p>
                     ) : (
                       <p className="mt-1 text-sm text-slate-500">Virtual link will be shared after payment.</p>
@@ -357,16 +357,21 @@ export default function AppointmentManagement() {
               <p><strong>Hospital:</strong> {selectedAppointment.hospitalName}</p>
             )}
             {selectedAppointment.appointmentType === "VIRTUAL" && (
-              selectedAppointment.meetingLink ? (
+              (selectedAppointment.patientMeetingLink || selectedAppointment.meetingLink) ? (
                 <p className="text-blue-600">
                   <strong>Meeting link:</strong>{" "}
-                  <a href={selectedAppointment.meetingLink} target="_blank" rel="noreferrer">
-                    {selectedAppointment.meetingLink}
+                  <a href={selectedAppointment.patientMeetingLink || selectedAppointment.meetingLink} target="_blank" rel="noreferrer">
+                    {selectedAppointment.patientMeetingLink || selectedAppointment.meetingLink}
                   </a>
                 </p>
               ) : (
                 <p className="text-sm text-slate-500">Virtual meeting link will be shared after payment.</p>
               )
+            )}
+            {selectedAppointment.appointmentType === "VIRTUAL" && selectedAppointment.doctorMeetingLink && (
+              <p className="text-sm text-slate-500">
+                Doctor link is also generated and stored separately.
+              </p>
             )}
             <p className={`font-semibold ${getStatusColor(selectedAppointment.status)}`}>
               Status: {selectedAppointment.status}

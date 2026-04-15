@@ -37,6 +37,8 @@ export type Appointment = {
   transactionId?: string;
   checkoutUrl?: string;
   consultationRoomName?: string;
+  patientMeetingLink?: string;
+  doctorMeetingLink?: string;
   meetingLink?: string;
 };
 
@@ -450,6 +452,20 @@ export async function getAppointments(idToken: string): Promise<Appointment[]> {
   });
   if (!res.ok) {
     throw new Error(`Failed to fetch appointments (${res.status})`);
+  }
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getAppointmentsForDoctor(doctorId: string, idToken: string): Promise<Appointment[]> {
+  const res = await fetch(`${appointmentBase}/appointments/doctor/${encodeURIComponent(doctorId)}`, {
+    cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch doctor appointments (${res.status})`);
   }
   const data = await res.json();
   return Array.isArray(data) ? data : [];

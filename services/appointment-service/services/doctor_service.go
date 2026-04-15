@@ -32,6 +32,7 @@ func NewDoctorService(baseURL string) *DoctorService {
 // Doctor is a lightweight representation of a doctor returned by the doctor-service.
 type Doctor struct {
 	ID                   string `json:"id"`
+	FirebaseUID          string `json:"firebase_uid"`
 	Name                 string `json:"name"`
 	Specialty            string `json:"specialty"`
 	Hospital             string `json:"hospital,omitempty"`

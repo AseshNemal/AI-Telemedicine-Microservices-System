@@ -12,7 +12,7 @@ import {
   doctorEndConsultation,
   doctorRejectAppointment,
   doctorStartConsultation,
-  getAppointments,
+  getAppointmentsForDoctor,
   getConsultationToken,
   getDoctorAvailability,
   getDoctorPatientReports,
@@ -128,8 +128,7 @@ export default function DoctorDashboardPage() {
             setError("Doctor profile not found and could not be auto-created. Please contact support.");
           }
         }
-        
-        const data = await getAppointments(token);
+
         if (profile) {
           setDoctorProfile(profile);
           setProfileForm({
@@ -147,8 +146,13 @@ export default function DoctorDashboardPage() {
             });
             setAvailabilityForm(buildAvailabilityForm(Array.isArray(availability) ? availability : []));
           }
+
+          const doctorAppointments = await getAppointmentsForDoctor(profile.id, token).catch((err) => {
+            console.error("Failed to fetch doctor appointments:", err);
+            return [];
+          });
+          setAppointments(Array.isArray(doctorAppointments) ? doctorAppointments : []);
         }
-        setAppointments(Array.isArray(data) ? data : []);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load doctor dashboard");
       } finally {
@@ -166,6 +170,20 @@ export default function DoctorDashboardPage() {
     const completed = appointments.filter((appointment) => appointment.status === "COMPLETED").length;
     return { total, booked, confirmed, completed };
   }, [appointments]);
+
+  async function loadDoctorAppointments() {
+    if (!idToken || !doctorProfile?.id) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getAppointmentsForDoctor(doctorProfile.id, idToken);
+      setAppointments(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load appointments");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleJoinConsultation(id: string) {
     if (!idToken) {
@@ -205,8 +223,7 @@ export default function DoctorDashboardPage() {
         window.open(result.meeting_link, "_blank", "noopener,noreferrer");
       }
       setMessage("Consultation started successfully.");
-      const data = await getAppointments(idToken);
-      setAppointments(Array.isArray(data) ? data : []);
+      await loadDoctorAppointments();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start consultation");
     } finally {
@@ -230,8 +247,7 @@ export default function DoctorDashboardPage() {
     try {
       await doctorEndConsultation(id, idToken, { notes, prescription });
       setMessage("Consultation ended successfully.");
-      const data = await getAppointments(idToken);
-      setAppointments(Array.isArray(data) ? data : []);
+      await loadDoctorAppointments();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to end consultation");
     } finally {
@@ -272,8 +288,7 @@ export default function DoctorDashboardPage() {
     try {
       await doctorAcceptAppointment(id, idToken);
       setMessage("Appointment accepted successfully.");
-      const data = await getAppointments(idToken);
-      setAppointments(Array.isArray(data) ? data : []);
+      await loadDoctorAppointments();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to accept appointment");
     } finally {
@@ -293,8 +308,7 @@ export default function DoctorDashboardPage() {
     try {
       await doctorRejectAppointment(id, idToken);
       setMessage("Appointment rejected. The patient has been notified and will be refunded.");
-      const data = await getAppointments(idToken);
-      setAppointments(Array.isArray(data) ? data : []);
+      await loadDoctorAppointments();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to reject appointment");
     } finally {
@@ -602,11 +616,9 @@ export default function DoctorDashboardPage() {
           <button
             className="btn-secondary text-sm"
             onClick={() => {
-              if (idToken) {
-                void getAppointments(idToken).then((data) => setAppointments(Array.isArray(data) ? data : []));
-              }
+              void loadDoctorAppointments();
             }}
-            disabled={loading || !idToken}
+            disabled={loading || !idToken || !doctorProfile?.id}
           >
             Refresh
           </button>
@@ -649,15 +661,15 @@ export default function DoctorDashboardPage() {
                   </td>
                   <td className="px-4 py-4 text-slate-700">{appointment.status}</td>
                   <td className="px-4 py-4">
-                    {appointment.appointmentType === "VIRTUAL" && appointment.meetingLink && (
+                    {appointment.appointmentType === "VIRTUAL" && (appointment.doctorMeetingLink || appointment.meetingLink) && (
                       <div className="mb-2">
                         <a
-                          href={appointment.meetingLink}
+                          href={appointment.doctorMeetingLink || appointment.meetingLink}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-800 hover:bg-blue-100"
                         >
-                          Open meeting link
+                          Open doctor link
                         </a>
                       </div>
                     )}
