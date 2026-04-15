@@ -476,6 +476,25 @@ Expected behavior:
 - Stale pods after config changes:
 	- Restart deployments: `kubectl rollout restart deployment/<name>`.
 
+## Frontend Features
+
+### Appointment Booking & Management
+- **Appointment Types:** Virtual or Physical appointments with separate hospital/location selection.
+- **Doctor Weekly Availability:** Doctors set consultation hours, appointment types, and hospital locations per day of the week.
+- **Appointment History:** Patients view booking history with appointment type (virtual/physical), meeting links for virtual appointments, and hospital details for physical appointments.
+- **Doctor Dashboard:** View all assigned appointments with status tracking, start/join consultation buttons, and access to patient reports.
+
+### Telemedicine Integration
+- **LiveKit Video Conferencing:** Support for video consultations with separate doctor and patient meeting links.
+- **Unique Room Naming:** Each consultation uses a unique room identifier.
+- **Participant Identity:** Doctor and patient are distinguished by participant identity and separate access tokens.
+- **Flexible Room Access:** Doctors and patients can join consultation rooms at any time (no 15-minute early join restriction).
+
+### UI Improvements
+- **Responsive Layout:** Doctor weekly availability grid and appointment tables support horizontal scrolling on smaller screens to maintain page alignment.
+- **Hospital Auto-Select:** Hospital name auto-updates when selecting an appointment date.
+- **Meeting Link Display:** Virtual appointments show meeting links in appointment history and doctor dashboard.
+
 ## Project Notes
 
 - Backend stack is split: Auth + Patient are Node/Express services, while Doctor + Appointment + Notification are Go/Gin services.
@@ -486,6 +505,7 @@ Expected behavior:
 - Symptom flow supports chat + voice modes; frontend uses `/api/symptoms/chat` as backend proxy.
 - MongoDB Atlas is configured via `DATABASE_URL`.
 - Services are independently deployable and communicate via REST APIs.
+- Telemedicine service generates separate access tokens for doctor and patient participants.
 
 ## Backend Integration Testing
 

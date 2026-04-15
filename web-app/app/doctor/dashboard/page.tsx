@@ -463,9 +463,9 @@ export default function DoctorDashboardPage() {
           <p className="mt-2 text-sm text-slate-600">Choose which days you accept bookings and set your consultation hours.</p>
         </div>
 
-        <div className="mt-5 space-y-3">
+        <div className="mt-5 space-y-3 overflow-x-auto">
           {availabilityForm.map((day) => (
-            <div key={day.day_of_week} className="grid items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[120px_120px_1fr_1fr_180px_200px]">
+            <div key={day.day_of_week} className="grid min-w-[900px] items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 md:grid-cols-[120px_120px_1fr_1fr_180px_200px]">
               <p className="text-sm font-semibold text-slate-900">{day.label}</p>
               <label className="inline-flex items-center gap-2 text-xs text-slate-600">
                 <input
@@ -583,7 +583,7 @@ export default function DoctorDashboardPage() {
           </button>
         </div>
 
-        <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200">
+        <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-[0.14em] text-slate-500">
               <tr>
