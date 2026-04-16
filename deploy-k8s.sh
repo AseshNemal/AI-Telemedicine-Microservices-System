@@ -10,6 +10,8 @@ set -e
 NAMESPACE="default"
 SECRETS_DIR="./secrets"
 ENV_FILE="./.env"
+SKIP_ROLLOUT_RESTART="${SKIP_ROLLOUT_RESTART:-false}"
+SKIP_ROLLOUT_WAIT="${SKIP_ROLLOUT_WAIT:-false}"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -77,17 +79,22 @@ PUBLIC_VARS=(
     "SYMPTOM_SERVICE_PORT"
     "NODE_ENV"
     "AUTH_SERVICE_URL"
+    "DOCTOR_SERVICE_URL"
     "PAYMENT_SERVICE_URL"
     "APPOINTMENT_SERVICE_URL"
     "PATIENT_SERVICE_URL"
+    "TELEMEDICINE_SERVICE_URL"
     "SYMPTOM_SERVICE_URL"
     "NOTIFICATION_SERVICE_URL"
+    "API_GATEWAY_INTERNAL_URL"
+    "NEXT_PUBLIC_API_URL"
     "NEXT_PUBLIC_AUTH_SERVICE_URL"
     "NEXT_PUBLIC_PATIENT_SERVICE_URL"
     "NEXT_PUBLIC_DOCTOR_SERVICE_URL"
     "NEXT_PUBLIC_APPOINTMENT_SERVICE_URL"
     "NEXT_PUBLIC_PAYMENT_SERVICE_URL"
     "NEXT_PUBLIC_SYMPTOM_SERVICE_URL"
+    "NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL"
     "NEXT_PUBLIC_FIREBASE_PROJECT_ID"
     "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN"
     "GOOGLE_CLIENT_ID"
@@ -107,18 +114,25 @@ config_default() {
         TELEMEDICINE_PORT) echo "${TELEMEDICINE_PORT:-8086}" ;;
         SYMPTOM_SERVICE_PORT) echo "${SYMPTOM_SERVICE_PORT:-8091}" ;;
         NODE_ENV) echo "${NODE_ENV:-production}" ;;
-        AUTH_SERVICE_URL) echo "${AUTH_SERVICE_URL:-http://auth-service:8081}" ;;
-        PAYMENT_SERVICE_URL) echo "${PAYMENT_SERVICE_URL:-http://payment-service:8085}" ;;
-        APPOINTMENT_SERVICE_URL) echo "${APPOINTMENT_SERVICE_URL:-http://appointment-service:8083}" ;;
-        PATIENT_SERVICE_URL) echo "${PATIENT_SERVICE_URL:-http://patient-service:5002}" ;;
-        SYMPTOM_SERVICE_URL) echo "${SYMPTOM_SERVICE_URL:-http://symptom-service:8091}" ;;
-        NOTIFICATION_SERVICE_URL) echo "${NOTIFICATION_SERVICE_URL:-http://notification-service:8084}" ;;
-        NEXT_PUBLIC_AUTH_SERVICE_URL) echo "http://localhost" ;;
-        NEXT_PUBLIC_PATIENT_SERVICE_URL) echo "http://localhost" ;;
-        NEXT_PUBLIC_DOCTOR_SERVICE_URL) echo "http://localhost" ;;
-        NEXT_PUBLIC_APPOINTMENT_SERVICE_URL) echo "http://localhost" ;;
-        NEXT_PUBLIC_PAYMENT_SERVICE_URL) echo "http://localhost" ;;
-        NEXT_PUBLIC_SYMPTOM_SERVICE_URL) echo "http://localhost" ;;
+        # NOTE: internal service URLs must stay cluster-local in Kubernetes.
+        # Do not source these from local .env host values like localhost:XXXX.
+        AUTH_SERVICE_URL) echo "http://auth-service:${AUTH_PORT:-8081}" ;;
+        DOCTOR_SERVICE_URL) echo "http://doctor-service:${DOCTOR_PORT:-8082}" ;;
+        PAYMENT_SERVICE_URL) echo "http://payment-service:${PAYMENT_PORT:-8085}" ;;
+        APPOINTMENT_SERVICE_URL) echo "http://appointment-service:${APPOINTMENT_PORT:-8083}" ;;
+        PATIENT_SERVICE_URL) echo "http://patient-service:${PATIENT_PORT:-5002}" ;;
+        TELEMEDICINE_SERVICE_URL) echo "http://telemedicine-service:${TELEMEDICINE_PORT:-8086}" ;;
+        SYMPTOM_SERVICE_URL) echo "http://symptom-service:${SYMPTOM_SERVICE_PORT:-8091}" ;;
+        NOTIFICATION_SERVICE_URL) echo "http://notification-service:${NOTIFICATION_PORT:-8084}" ;;
+        API_GATEWAY_INTERNAL_URL) echo "${API_GATEWAY_INTERNAL_URL:-http://api-gateway-nginx}" ;;
+        NEXT_PUBLIC_API_URL) echo "${NEXT_PUBLIC_API_URL:-http://localhost:8080}" ;;
+        NEXT_PUBLIC_AUTH_SERVICE_URL) echo "${NEXT_PUBLIC_AUTH_SERVICE_URL:-http://localhost:8080}" ;;
+        NEXT_PUBLIC_PATIENT_SERVICE_URL) echo "${NEXT_PUBLIC_PATIENT_SERVICE_URL:-http://localhost:8080}" ;;
+        NEXT_PUBLIC_DOCTOR_SERVICE_URL) echo "${NEXT_PUBLIC_DOCTOR_SERVICE_URL:-http://localhost:8080}" ;;
+        NEXT_PUBLIC_APPOINTMENT_SERVICE_URL) echo "${NEXT_PUBLIC_APPOINTMENT_SERVICE_URL:-http://localhost:8080}" ;;
+        NEXT_PUBLIC_PAYMENT_SERVICE_URL) echo "${NEXT_PUBLIC_PAYMENT_SERVICE_URL:-http://localhost:8080}" ;;
+        NEXT_PUBLIC_SYMPTOM_SERVICE_URL) echo "${NEXT_PUBLIC_SYMPTOM_SERVICE_URL:-http://localhost:8080}" ;;
+        NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL) echo "${NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL:-http://localhost:8080}" ;;
         NEXT_PUBLIC_FIREBASE_PROJECT_ID) echo "${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-${FIREBASE_PROJECT_ID:-}}" ;;
         NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN) echo "${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}" ;;
         GOOGLE_CLIENT_ID) echo "${GOOGLE_CLIENT_ID:-}" ;;
@@ -229,9 +243,41 @@ kubectl create secret generic telemedicine-secrets \
 
 echo -e "${GREEN}✓ All services deployed${NC}\n"
 
-# Wait for deployments to be ready
-echo -e "${YELLOW}Waiting for deployments to be ready...${NC}"
-kubectl wait --for=condition=available --timeout=300s deployment --all -n "$NAMESPACE" || true
+if [ "$SKIP_ROLLOUT_RESTART" != "true" ]; then
+    echo -e "${YELLOW}Restarting deployments to pick up rebuilt images and updated config...${NC}"
+    DEPLOYMENTS="$(kubectl get deployments -n "$NAMESPACE" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
+
+    while IFS= read -r deployment; do
+        [ -z "$deployment" ] && continue
+        kubectl rollout restart "deployment/${deployment}" -n "$NAMESPACE"
+    done <<EOF
+$DEPLOYMENTS
+EOF
+    echo -e "${GREEN}✓ Deployment restart triggered${NC}\n"
+else
+    echo -e "${YELLOW}Skipping deployment restart (SKIP_ROLLOUT_RESTART=true)${NC}\n"
+fi
+
+if [ "$SKIP_ROLLOUT_WAIT" != "true" ]; then
+    echo -e "${YELLOW}Waiting for deployments to be ready...${NC}"
+
+    while IFS= read -r deployment; do
+        [ -z "$deployment" ] && continue
+        echo -e "${BLUE}Checking rollout: deployment/${deployment}${NC}"
+        if ! kubectl rollout status "deployment/${deployment}" -n "$NAMESPACE" --timeout=300s; then
+            echo -e "${RED}Deployment ${deployment} failed to roll out${NC}"
+            kubectl describe deployment "$deployment" -n "$NAMESPACE" || true
+            kubectl get pods -n "$NAMESPACE" --show-labels || true
+            kubectl logs -n "$NAMESPACE" "deployment/${deployment}" --tail=120 || true
+            exit 1
+        fi
+    done <<EOF
+$DEPLOYMENTS
+EOF
+    echo ""
+else
+    echo -e "${YELLOW}Skipping rollout wait (SKIP_ROLLOUT_WAIT=true)${NC}\n"
+fi
 
 # Show deployment status
 echo -e "\n${BLUE}Deployment Status:${NC}"

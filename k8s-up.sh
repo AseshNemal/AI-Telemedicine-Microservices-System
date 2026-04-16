@@ -44,6 +44,104 @@ log_warn() { echo -e "${YELLOW}$*${NC}"; }
 log_ok() { echo -e "${GREEN}$*${NC}"; }
 log_err() { echo -e "${RED}$*${NC}"; }
 
+port_is_listening() {
+  local port="$1"
+  lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1
+}
+
+listening_pid() {
+  local port="$1"
+  lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | head -n 1
+}
+
+listening_command() {
+  local pid="$1"
+  [[ -z "$pid" ]] && return 0
+  ps -o comm= -p "$pid" 2>/dev/null | awk '{print $1}'
+}
+
+wait_for_local_http() {
+  local port="$1"
+  local attempts="${2:-20}"
+  local path="${3:-/}"
+  local i
+
+  for ((i=1; i<=attempts; i++)); do
+    if curl -fsS "http://127.0.0.1:${port}${path}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  return 1
+}
+
+print_failure_hints() {
+  local target="$1"
+
+  log_warn "Possible fix for ${target}:"
+  case "$target" in
+    api-gateway-nginx)
+      echo "  - Check the mounted gateway config: kubectl get configmap api-gateway-nginx-config -n ${NAMESPACE} -o yaml"
+      echo "  - Restart the gateway after config changes: kubectl rollout restart deployment/api-gateway-nginx -n ${NAMESPACE}"
+      echo "  - Re-test locally: curl -i http://127.0.0.1:8080/health"
+      ;;
+    web-app)
+      echo "  - Check runtime logs: kubectl logs -n ${NAMESPACE} deployment/web-app --tail=200"
+      echo "  - Rebuild the frontend image: docker build -t web-app:latest ${ROOT_DIR}/web-app"
+      echo "  - Verify the standalone server is present in the image before rollout"
+      ;;
+    payment-service)
+      echo "  - Check MongoDB connectivity and secret values in .env"
+      echo "  - Inspect logs: kubectl logs -n ${NAMESPACE} deployment/payment-service --tail=200"
+      ;;
+    telemedicine-service)
+      echo "  - Check LiveKit-related env vars in .env and the service logs"
+      echo "  - Inspect logs: kubectl logs -n ${NAMESPACE} deployment/telemedicine-service --tail=200"
+      ;;
+    *)
+      echo "  - Inspect deployment logs: kubectl logs -n ${NAMESPACE} deployment/${target} --tail=200"
+      echo "  - Inspect pod events: kubectl describe deployment ${target} -n ${NAMESPACE}"
+      ;;
+  esac
+}
+
+start_port_forward_if_needed() {
+  local service="$1"
+  local local_port="$2"
+  local remote_port="$3"
+  local pid_var="$4"
+  local label="$5"
+
+  if port_is_listening "$local_port"; then
+    local existing_pid existing_cmd
+    existing_pid="$(listening_pid "$local_port")"
+    existing_cmd="$(listening_command "$existing_pid")"
+
+    if [[ "$existing_cmd" == "kubectl" ]]; then
+      log_warn "${label} local port ${local_port} is held by an old kubectl listener; replacing it"
+      kill "$existing_pid" 2>/dev/null || true
+      sleep 1
+    else
+      log_warn "${label} local port ${local_port} is already in use; reusing existing listener"
+      printf -v "$pid_var" '%s' ""
+      return 0
+    fi
+  fi
+
+  kubectl port-forward -n "$NAMESPACE" "svc/${service}" "${local_port}:${remote_port}" > /dev/null 2>&1 &
+  local pf_pid=$!
+  printf -v "$pid_var" '%s' "$pf_pid"
+}
+
+cleanup_port_forwards() {
+  local pid
+  for pid in "${PORT_FORWARD_PIDS[@]:-}"; do
+    [[ -n "$pid" ]] || continue
+    kill "$pid" 2>/dev/null || true
+  done
+}
+
 require_cmd() {
   local cmd="$1"
   if ! command -v "$cmd" >/dev/null 2>&1; then
@@ -129,13 +227,37 @@ deploy_manifests() {
 
   log_info "Running deploy script (secrets + manifests)..."
   chmod +x "$deploy_script"
-  "$deploy_script"
+  SKIP_ROLLOUT_WAIT=true "$deploy_script"
   log_ok "Deploy step complete"
 }
 
 wait_rollout() {
   log_info "Waiting for deployments to become available..."
-  kubectl wait --for=condition=available --timeout=300s deployment --all -n "$NAMESPACE" || true
+
+  local deployments
+  deployments="$(kubectl get deployments -n "$NAMESPACE" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')"
+
+  if [[ -z "${deployments}" ]]; then
+    log_warn "No deployments found in namespace ${NAMESPACE}"
+    return 0
+  fi
+
+  local dep
+  while IFS= read -r dep; do
+    [[ -z "$dep" ]] && continue
+    log_info "- rollout status deployment/${dep}"
+    if ! kubectl rollout status "deployment/${dep}" -n "$NAMESPACE" --timeout=300s; then
+      log_err "Deployment ${dep} failed to roll out"
+      kubectl describe deployment "${dep}" -n "$NAMESPACE" || true
+      kubectl get pods -n "$NAMESPACE" --show-labels || true
+      kubectl logs -n "$NAMESPACE" "deployment/${dep}" --tail=120 || true
+      print_failure_hints "$dep"
+      return 1
+    fi
+  done <<EOF
+$deployments
+EOF
+
   kubectl get deployments -n "$NAMESPACE"
   kubectl get pods -n "$NAMESPACE"
   log_ok "Rollout wait step complete"
@@ -148,36 +270,36 @@ health_checks() {
     log_ok "Gateway health endpoint reachable in cluster"
   else
     log_warn "Gateway health check failed. Inspect pods and logs."
+    print_failure_hints "api-gateway-nginx"
   fi
 }
 
 start_port_forward() {
   log_info "Starting comprehensive port-forwarding for all services..."
   log_info "Press Ctrl+C to stop all port-forwards."
-  
-  # Forward API Gateway
-  kubectl port-forward -n "$NAMESPACE" svc/api-gateway-nginx "${PORT_FORWARD_PORT}:80" > /dev/null 2>&1 &
-  GATEWAY_PID=$!
 
-  # Forward Web App Service
-  kubectl port-forward -n "$NAMESPACE" svc/web-app 3000:3000 > /dev/null 2>&1 &
-  WEB_PID=$!
+  PORT_FORWARD_PIDS=()
 
-  # Forward Individual Backend Services (For direct debugging)
-  kubectl port-forward -n "$NAMESPACE" svc/auth-service 8081:8081 > /dev/null 2>&1 &
-  AUTH_PID=$!
-  kubectl port-forward -n "$NAMESPACE" svc/patient-service 5002:5002 > /dev/null 2>&1 &
-  PATIENT_PID=$!
-  kubectl port-forward -n "$NAMESPACE" svc/doctor-service 8082:8082 > /dev/null 2>&1 &
-  DOCTOR_PID=$!
-  kubectl port-forward -n "$NAMESPACE" svc/appointment-service 8083:8083 > /dev/null 2>&1 &
-  APPT_PID=$!
-  kubectl port-forward -n "$NAMESPACE" svc/notification-service 8084:8084 > /dev/null 2>&1 &
-  NOTIFY_PID=$!
-  kubectl port-forward -n "$NAMESPACE" svc/payment-service 8085:8085 > /dev/null 2>&1 &
-  PAY_PID=$!
-  kubectl port-forward -n "$NAMESPACE" svc/symptom-service 8091:8091 > /dev/null 2>&1 &
-  SYMPTOM_PID=$!
+  local GATEWAY_PID="" WEB_PID="" AUTH_PID="" PATIENT_PID="" DOCTOR_PID="" APPT_PID="" NOTIFY_PID="" PAY_PID="" SYMPTOM_PID=""
+
+  start_port_forward_if_needed "api-gateway-nginx" "$PORT_FORWARD_PORT" 80 GATEWAY_PID "API Gateway"
+  start_port_forward_if_needed "web-app" 3000 3000 WEB_PID "Web Frontend"
+  start_port_forward_if_needed "auth-service" 8081 8081 AUTH_PID "Auth Service"
+  start_port_forward_if_needed "patient-service" 5002 5002 PATIENT_PID "Patient Service"
+  start_port_forward_if_needed "doctor-service" 8082 8082 DOCTOR_PID "Doctor Service"
+  start_port_forward_if_needed "appointment-service" 8083 8083 APPT_PID "Appointment Service"
+  start_port_forward_if_needed "notification-service" 8084 8084 NOTIFY_PID "Notification Service"
+  start_port_forward_if_needed "payment-service" 8085 8085 PAY_PID "Payment Service"
+  start_port_forward_if_needed "symptom-service" 8091 8091 SYMPTOM_PID "Symptom Service"
+
+  PORT_FORWARD_PIDS=("$GATEWAY_PID" "$WEB_PID" "$AUTH_PID" "$PATIENT_PID" "$DOCTOR_PID" "$APPT_PID" "$NOTIFY_PID" "$PAY_PID" "$SYMPTOM_PID")
+
+  if [[ -n "$GATEWAY_PID" ]] && ! wait_for_local_http "$PORT_FORWARD_PORT" 20 "/health"; then
+    log_err "API Gateway did not become reachable on localhost:${PORT_FORWARD_PORT}"
+    print_failure_hints "api-gateway-nginx"
+    cleanup_port_forwards
+    exit 1
+  fi
 
   echo -e "\n✅ Success! Your apps and individual services are now exposed locally."
   echo "   - Web Frontend:  http://localhost:3000"
@@ -191,7 +313,7 @@ start_port_forward() {
   echo "   - Symptom:       http://localhost:8091"
   echo ""
 
-  trap "log_info '\nStopping all port forwards...'; kill \$GATEWAY_PID \$WEB_PID \$AUTH_PID \$PATIENT_PID \$DOCTOR_PID \$APPT_PID \$NOTIFY_PID \$PAY_PID \$SYMPTOM_PID 2>/dev/null; exit" INT
+  trap "log_info '\nStopping all port forwards...'; cleanup_port_forwards; exit" INT
   wait
 }
 

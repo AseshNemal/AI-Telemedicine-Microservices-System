@@ -77,20 +77,30 @@ What this single command does:
 
 - Builds Docker images
 - Applies Kubernetes manifests and secrets setup flow
+- Restarts deployments so rebuilt local `:latest` images are picked up by the cluster
 - Waits for rollouts and runs health checks
 - Starts port-forwarding for gateway + web-app + core services
+- Replaces stale old `kubectl port-forward` listeners automatically
 
 Open after it starts:
 
 - Frontend: `http://localhost:3000`
 - API Gateway: `http://localhost:8080`
 - Gateway health: `http://localhost:8080/health`
+- Doctors via gateway: `http://localhost:8080/doctors`
 
 Fast rerun (skip image build):
 
 ```bash
 ./k8s-up.sh --skip-build --port-forward --port 8080
 ```
+
+Runtime notes:
+
+- Keep the terminal that started `./k8s-up.sh --port-forward --port 8080` open while using the app.
+- Press `Ctrl+C` in that terminal to stop the port-forwards.
+- If local port `3000` is already used by a non-`kubectl` process, the script reuses that listener instead of killing it.
+- If local ports like `8080`, `8081`, `8082`, or `8085` are held by old `kubectl` listeners, the script replaces them automatically.
 
 OS notes (same workflow, different shell launcher):
 
@@ -124,7 +134,7 @@ bash ./k8s-up.sh --port-forward --port 8080
 ├──────┬──────────┬──────────┬──────────┬────────┬────────────┤
 │      │          │          │          │        │            │
 │ Auth │ Patient  │ Doctor   │Appt      │ Notify │  Payment   │
-│5001  │  5002    │  8082    │ 8083     │  8084  │  8085      │
+│8081  │  5002    │  8082    │ 8083     │  8084  │  8085      │
 │Node  │  Node    │   Go     │   Go     │   Go   │    Go      │
 └──────┴──────────┴──────────┴──────────┴────────┴────────────┘
 ```
@@ -158,7 +168,7 @@ AI Telemedicine Microservices System/
 - Gateway -> `80` (access all services via `/api/*`, `/doctors`, `/appointments`, `/payments`, etc.)
 
 **Individual Service Ports (for direct access during development):**
-- Auth Service (Node/Express) -> `5001`
+- Auth Service (Node/Express) -> `8081`
 - Patient Service (Node/Express) -> `5002`
 - Doctor Service -> `8082`
 - Appointment Service -> `8083`
@@ -387,7 +397,7 @@ kubectl rollout status deployment/payment-service
 kubectl rollout status deployment/symptom-service
 kubectl rollout status deployment/telemedicine-service
 kubectl rollout status deployment/web-app
-kubectl rollout status deployment/api-gateway
+kubectl rollout status deployment/api-gateway-nginx
 kubectl rollout status statefulset/mongodb-payment
 ```
 
@@ -411,7 +421,7 @@ Then use:
 ### 7) Logs and troubleshooting
 
 ```bash
-kubectl logs deployment/api-gateway --tail=200
+kubectl logs deployment/api-gateway-nginx --tail=200
 kubectl logs deployment/web-app --tail=200
 kubectl logs deployment/doctor-service --tail=200
 kubectl describe pod <pod-name>
@@ -428,15 +438,15 @@ kubectl delete -f deployments/kubernetes/
 
 After startup, verify (via API Gateway):
 
-- `http://localhost/health` (Gateway)
-- `http://localhost/api/auth/health` (Auth Service via gateway)
-- `http://localhost/api/patients/health` (Patient Service via gateway)
-- `http://localhost/doctors` (Doctor Service via gateway)
-- `http://localhost/appointments` (Appointment Service via gateway)
+- `http://localhost:8080/health` (Gateway)
+- `http://localhost:8080/api/auth/health` (Auth Service via gateway)
+- `http://localhost:8080/api/patients/health` (Patient Service via gateway)
+- `http://localhost:8080/doctors` (Doctor Service via gateway)
+- `http://localhost:8080/appointments` (Appointment Service via gateway)
 
 Direct service checks (cluster-local / forwarded):
 
-- `http://localhost:5001/health`
+- `http://localhost:8081/health`
 - `http://localhost:5002/health`
 - `http://localhost:8082/health`
 - `http://localhost:8083/health`
@@ -448,18 +458,18 @@ Direct service checks (cluster-local / forwarded):
 
 Register user (via gateway):
 
-- Endpoint: `POST http://localhost/api/auth/register`
+- Endpoint: `POST http://localhost:8080/api/auth/register`
 - Sample payload:
 	- `{"fullName":"Alex","email":"alex@example.com","password":"Pass12345!","role":"PATIENT"}`
 
 Get current user (requires Firebase ID token):
 
-- Endpoint: `GET http://localhost/api/auth/me`
+- Endpoint: `GET http://localhost:8080/api/auth/me`
 - Header: `Authorization: Bearer <firebase_id_token>`
 
 Create appointment (via gateway):
 
-- Endpoint: `POST http://localhost/appointments`
+- Endpoint: `POST http://localhost:8080/appointments`
 - Sample payload:
 	- `{"patientId":"patient-001","doctorId":"doc-1","date":"2026-03-10","time":"10:30"}`
 
@@ -473,7 +483,8 @@ Expected behavior:
 - Kubernetes context mismatch:
 	- Verify with `kubectl config current-context` and `kubectl get nodes`.
 - Port already in use:
-	- Stop conflicting local process or change `kubectl port-forward` local port.
+	- `k8s-up.sh` replaces stale old `kubectl` listeners automatically.
+	- If the port is held by a real non-`kubectl` process, stop that process or choose a different local port.
 - MongoDB connection errors:
 	- Re-check `AUTH_MONGO_URI` / `PATIENT_MONGO_URI` (or fallback `DATABASE_URL`) in root `.env`.
 - Firebase credential errors at startup:
@@ -485,9 +496,20 @@ Expected behavior:
 	- Verify `SYMPTOM_SERVICE_URL` points to service DNS in cluster (for example `http://symptom-service:8091`).
 - Stale pods after config changes:
 	- Restart deployments: `kubectl rollout restart deployment/<name>`.
+- Frontend appointments page shows `Load failed` while fetching doctors:
+	- Check the gateway first: `curl -i http://127.0.0.1:8080/doctors`
+	- If this fails, inspect and restart the gateway:
+	- `kubectl get configmap api-gateway-nginx-config -n default -o yaml`
+	- `kubectl rollout restart deployment/api-gateway-nginx -n default`
+- `GET /admin/doctors` returns `401 Unauthorized`:
+	- This is expected without a valid bearer token.
+	- It means the route exists and authentication is working.
 - `web-app` Docker build fails at `npm ci` with `EUSAGE` / `picomatch` mismatch:
 	- Cause: lockfile generated with a different npm major than `node:22-alpine` uses.
 	- Fix: regenerate `web-app/package-lock.json` using `node:22-alpine` (command above), then rebuild.
+- `web-app` pod crashes with `Cannot find module '/app/server.js'`:
+	- Rebuild `web-app:latest` and restart `deployment/web-app`.
+	- The runtime image must contain the Next.js standalone server at `/app/server.js`.
 - Docker build context is unexpectedly huge / build gets canceled during context transfer:
 	- Ensure `web-app/.dockerignore` exists and excludes at least `node_modules`, `.next`, `.git`, and local IDE artifacts.
 	- Re-run build with `--progress=plain` to confirm context size.
