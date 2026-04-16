@@ -309,6 +309,16 @@ kubectl get nodes
 
 Build all required images from the repo root (or run your existing build helper scripts):
 
+> **Important for `web-app` image builds:** this project currently builds with `node:22-alpine` (npm 10.x in container). If your local machine uses npm 11.x, regenerate `web-app/package-lock.json` using the container runtime before building to avoid `npm ci` sync errors.
+
+```bash
+# regenerate lockfile with the same npm major used in Docker image
+cd web-app
+rm -rf node_modules package-lock.json
+docker run --rm -u "$(id -u):$(id -g)" -e npm_config_cache=/tmp/.npm -v "$PWD:/app" -w /app node:22-alpine sh -lc 'npm install --no-audit --no-fund'
+cd ..
+```
+
 ```bash
 docker build -t auth-service:latest -f services/auth-service-node/Dockerfile services/auth-service-node
 docker build -t patient-service:latest -f services/patient-service-node/Dockerfile services/patient-service-node
@@ -475,6 +485,12 @@ Expected behavior:
 	- Verify `SYMPTOM_SERVICE_URL` points to service DNS in cluster (for example `http://symptom-service:8091`).
 - Stale pods after config changes:
 	- Restart deployments: `kubectl rollout restart deployment/<name>`.
+- `web-app` Docker build fails at `npm ci` with `EUSAGE` / `picomatch` mismatch:
+	- Cause: lockfile generated with a different npm major than `node:22-alpine` uses.
+	- Fix: regenerate `web-app/package-lock.json` using `node:22-alpine` (command above), then rebuild.
+- Docker build context is unexpectedly huge / build gets canceled during context transfer:
+	- Ensure `web-app/.dockerignore` exists and excludes at least `node_modules`, `.next`, `.git`, and local IDE artifacts.
+	- Re-run build with `--progress=plain` to confirm context size.
 
 ## Frontend Features
 
@@ -537,8 +553,10 @@ Current manifests under `deployments/kubernetes/` include:
 - `api-gateway-deployment.yaml`
 - `api-gateway-service.yaml`
 - `secret.example.yaml` (template only; do not apply as real secret)
+- `mongodb-payment-credentials.example.yaml` (template for payment MongoDB secret)
 
 > Real secrets should be created using `kubectl create secret ...` from local files or env values.
+> `secret.example.yaml` intentionally uses a non-runtime secret name (`telemedicine-secrets-example`) to avoid accidental overwrite of the runtime secret (`telemedicine-secrets`).
 
 ## Kubernetes Quick Run (Recommended)
 
