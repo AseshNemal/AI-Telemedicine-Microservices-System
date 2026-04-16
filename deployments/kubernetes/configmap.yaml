@@ -18,10 +18,12 @@ data:
 
   # ── Internal service URLs (cluster-internal) ──────────────────────────────────
   AUTH_SERVICE_URL: "http://auth-service:8081"
+  DOCTOR_SERVICE_URL: "http://doctor-service:8082"
   PAYMENT_SERVICE_URL: "http://payment-service:8085"
   APPOINTMENT_SERVICE_URL: "http://appointment-service:8083"
   NOTIFICATION_SERVICE_URL: "http://notification-service:8084"
   PATIENT_SERVICE_URL: "http://patient-service:5002"
+  TELEMEDICINE_SERVICE_URL: "http://telemedicine-service:8086"
   SYMPTOM_SERVICE_URL: "http://symptom-service:8091"
   LIVEKIT_URL: "wss://ai-telemedicine-5kuq9m1m.livekit.cloud"
   API_GATEWAY_INTERNAL_URL: "http://api-gateway-nginx"
@@ -35,6 +37,7 @@ data:
   NEXT_PUBLIC_APPOINTMENT_SERVICE_URL: "http://localhost:8080"
   NEXT_PUBLIC_PAYMENT_SERVICE_URL: "http://localhost:8080"
   NEXT_PUBLIC_SYMPTOM_SERVICE_URL: "http://localhost:8080"
+  NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL: "http://localhost:8080"
 
   # ── Firebase (public vars only – secrets are in telemedicine-secrets) ─────────
   NEXT_PUBLIC_FIREBASE_PROJECT_ID: "telemedicine-micro-system"

@@ -50,6 +50,16 @@ spec:
                 configMapKeyRef:
                   name: telemedicine-config
                   key: PAYMENT_SERVICE_URL
+            - name: DOCTOR_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: DOCTOR_SERVICE_URL
+            - name: TELEMEDICINE_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: TELEMEDICINE_SERVICE_URL
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

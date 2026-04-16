@@ -35,6 +35,31 @@ spec:
                 configMapKeyRef:
                   name: telemedicine-config
                   key: NODE_ENV
+            - name: AUTH_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: AUTH_SERVICE_URL
+            - name: APPOINTMENT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: APPOINTMENT_SERVICE_URL
+            - name: PATIENT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: PATIENT_SERVICE_URL
+            - name: TELEMEDICINE_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: TELEMEDICINE_SERVICE_URL
+            - name: NOTIFICATION_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NOTIFICATION_SERVICE_URL
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

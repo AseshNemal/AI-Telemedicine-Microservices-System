@@ -63,6 +63,11 @@ spec:
                 configMapKeyRef:
                   name: telemedicine-config
                   key: NEXT_PUBLIC_SYMPTOM_SERVICE_URL
+            - name: NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL
             - name: SYMPTOM_SERVICE_URL
               valueFrom:
                 configMapKeyRef:
