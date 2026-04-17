@@ -1,4 +1,4 @@
-import { resolveServiceBase } from "@/lib/api/baseUrls";
+import { resolveGatewayBase, resolveServiceBase } from "@/lib/api/baseUrls";
 
 export type Doctor = {
   id: string;
@@ -208,30 +208,15 @@ export type DoctorScheduleSummary = {
   slotsByDate: Record<string, DoctorScheduleSummarySlot[]>;
 };
 
-const doctorBase = resolveServiceBase(
-  process.env.NEXT_PUBLIC_DOCTOR_SERVICE_URL,
-  "",
-);
-const appointmentBase = resolveServiceBase(
-  process.env.NEXT_PUBLIC_APPOINTMENT_SERVICE_URL,
-  "",
-);
-const authBase = resolveServiceBase(
-  process.env.NEXT_PUBLIC_AUTH_SERVICE_URL,
-  "/api/auth",
-);
-const patientBase = resolveServiceBase(
-  process.env.NEXT_PUBLIC_PATIENT_SERVICE_URL,
-  "/api/patients",
-);
-const paymentBase = resolveServiceBase(
-  process.env.NEXT_PUBLIC_PAYMENT_SERVICE_URL,
-  "",
-);
-const telemedicineBase = resolveServiceBase(
-  process.env.NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL,
-  "",
-);
+// In the browser, all public API traffic should flow through the gateway.
+// This avoids depending on a matrix of local port-forwards like 8081/8082/5002.
+const gatewayBase = resolveGatewayBase();
+const doctorBase = gatewayBase;
+const appointmentBase = gatewayBase;
+const authBase = resolveServiceBase(undefined, "/api/auth");
+const patientBase = resolveServiceBase(undefined, "/api/patients");
+const paymentBase = gatewayBase;
+const telemedicineBase = gatewayBase;
 
 export async function getDoctors(specialty?: string): Promise<Doctor[]> {
   const query = specialty ? `?specialty=${encodeURIComponent(specialty)}` : "";

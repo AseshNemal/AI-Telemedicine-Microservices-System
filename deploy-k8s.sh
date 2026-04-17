@@ -126,13 +126,14 @@ config_default() {
         NOTIFICATION_SERVICE_URL) echo "http://notification-service:${NOTIFICATION_PORT:-8084}" ;;
         API_GATEWAY_INTERNAL_URL) echo "${API_GATEWAY_INTERNAL_URL:-http://api-gateway-nginx}" ;;
         NEXT_PUBLIC_API_URL) echo "${NEXT_PUBLIC_API_URL:-http://localhost:8080}" ;;
-        NEXT_PUBLIC_AUTH_SERVICE_URL) echo "${NEXT_PUBLIC_AUTH_SERVICE_URL:-http://localhost:8080}" ;;
-        NEXT_PUBLIC_PATIENT_SERVICE_URL) echo "${NEXT_PUBLIC_PATIENT_SERVICE_URL:-http://localhost:8080}" ;;
-        NEXT_PUBLIC_DOCTOR_SERVICE_URL) echo "${NEXT_PUBLIC_DOCTOR_SERVICE_URL:-http://localhost:8080}" ;;
-        NEXT_PUBLIC_APPOINTMENT_SERVICE_URL) echo "${NEXT_PUBLIC_APPOINTMENT_SERVICE_URL:-http://localhost:8080}" ;;
-        NEXT_PUBLIC_PAYMENT_SERVICE_URL) echo "${NEXT_PUBLIC_PAYMENT_SERVICE_URL:-http://localhost:8080}" ;;
-        NEXT_PUBLIC_SYMPTOM_SERVICE_URL) echo "${NEXT_PUBLIC_SYMPTOM_SERVICE_URL:-http://localhost:8080}" ;;
-        NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL) echo "${NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL:-http://localhost:8080}" ;;
+        # Public browser traffic must go through the gateway, not direct service ports.
+        NEXT_PUBLIC_AUTH_SERVICE_URL) echo "${NEXT_PUBLIC_API_URL:-http://localhost:8080}" ;;
+        NEXT_PUBLIC_PATIENT_SERVICE_URL) echo "${NEXT_PUBLIC_API_URL:-http://localhost:8080}" ;;
+        NEXT_PUBLIC_DOCTOR_SERVICE_URL) echo "${NEXT_PUBLIC_API_URL:-http://localhost:8080}" ;;
+        NEXT_PUBLIC_APPOINTMENT_SERVICE_URL) echo "${NEXT_PUBLIC_API_URL:-http://localhost:8080}" ;;
+        NEXT_PUBLIC_PAYMENT_SERVICE_URL) echo "${NEXT_PUBLIC_API_URL:-http://localhost:8080}" ;;
+        NEXT_PUBLIC_SYMPTOM_SERVICE_URL) echo "${NEXT_PUBLIC_API_URL:-http://localhost:8080}" ;;
+        NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL) echo "${NEXT_PUBLIC_API_URL:-http://localhost:8080}" ;;
         NEXT_PUBLIC_FIREBASE_PROJECT_ID) echo "${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-${FIREBASE_PROJECT_ID:-}}" ;;
         NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN) echo "${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}" ;;
         GOOGLE_CLIENT_ID) echo "${GOOGLE_CLIENT_ID:-}" ;;
