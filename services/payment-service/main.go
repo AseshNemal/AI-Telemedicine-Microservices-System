@@ -16,7 +16,11 @@ import (
 func main() {
 	// Best-effort local .env loading (safe no-op in Docker/K8s where envs are injected)
 	// Overload is used so empty shell vars don't block values from .env during local runs.
-	_ = godotenv.Overload(".env", "../.env", "../../.env")
+	// Important: load each candidate path independently. Passing multiple files in
+	// a single call can short-circuit if an earlier file path doesn't exist.
+	for _, envPath := range []string{".env", "../.env", "../../.env"} {
+		_ = godotenv.Overload(envPath)
+	}
 
 	// Load environment
 	port := os.Getenv("PORT")
