@@ -1,16 +1,12 @@
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install --omit=dev --no-audit --no-fund
+RUN npm install --no-audit --no-fund
 
-COPY src ./src
-RUN mkdir -p /var/secrets/firebase && chown -R node:node /app /var/secrets/firebase
+COPY . .
 
-ENV NODE_ENV=production
-ENV FIREBASE_SERVICE_ACCOUNT_PATH=/var/secrets/firebase/service-account.json
-EXPOSE 5001
+EXPOSE 8081
 
-USER node
 CMD ["npm", "start"]

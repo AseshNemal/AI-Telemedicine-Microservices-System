@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: symptom-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: symptom-service
+  template:
+    metadata:
+      labels:
+        app: symptom-service
+    spec:
+      containers:
+        - name: symptom-service
+          image: symptom-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8091
+          env:
+            - name: PORT
+              value: "8091"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: OPENAI_API_KEY
+            - name: OPENAI_MODEL
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: OPENAI_MODEL
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: symptom-service
+spec:
+  selector:
+    app: symptom-service
+  ports:
+    - port: 8091
+      targetPort: 8091

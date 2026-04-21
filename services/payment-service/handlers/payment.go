@@ -288,11 +288,29 @@ func notifyAppointmentPaymentConfirmed(appointmentID, transactionID string) erro
 }
 
 func resolveStripeSecretKey() string {
-	if v := strings.TrimSpace(os.Getenv("STRIPE_SECRET_KEY")); v != "" {
+	if v := normalizeEnvScalar(os.Getenv("STRIPE_SECRET_KEY")); v != "" {
 		return v
 	}
 
-	return findEnvValue("STRIPE_SECRET_KEY", ".env", "../.env", "../../.env")
+	return normalizeEnvScalar(findEnvValue("STRIPE_SECRET_KEY", ".env", "../.env", "../../.env"))
+}
+
+func resolveStripeWebhookSecret() string {
+	if v := normalizeEnvScalar(os.Getenv("STRIPE_WEBHOOK_SECRET")); v != "" {
+		return v
+	}
+
+	return normalizeEnvScalar(findEnvValue("STRIPE_WEBHOOK_SECRET", ".env", "../.env", "../../.env"))
+}
+
+func normalizeEnvScalar(value string) string {
+	v := strings.TrimSpace(value)
+	if len(v) >= 2 {
+		if (v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'') {
+			v = v[1 : len(v)-1]
+		}
+	}
+	return strings.TrimSpace(v)
 }
 
 func findEnvValue(key string, paths ...string) string {
@@ -376,7 +394,7 @@ func (h *Handler) HandleWebhook(c *gin.Context) {
 	}
 
 	// Verify Stripe webhook signature (C-5).
-	endpointSecret := strings.TrimSpace(os.Getenv("STRIPE_WEBHOOK_SECRET"))
+	endpointSecret := resolveStripeWebhookSecret()
 	if endpointSecret == "" {
 		log.Println("[payment-service] STRIPE_WEBHOOK_SECRET is not configured — rejecting webhook")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "webhook secret not configured"})

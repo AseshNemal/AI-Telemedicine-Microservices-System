@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: appointment-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: appointment-service
+  template:
+    metadata:
+      labels:
+        app: appointment-service
+    spec:
+      containers:
+        - name: appointment-service
+          image: appointment-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8083
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: DATABASE_URL
+            - name: INTERNAL_SERVICE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: INTERNAL_SERVICE_KEY
+            - name: NOTIFICATION_SERVICE_URL
+              value: http://notification-service:8084
+            - name: DOCTOR_SERVICE_URL
+              value: http://doctor-service:8082
+            - name: PAYMENT_SERVICE_URL
+              value: http://payment-service:8085
+            - name: AUTH_SERVICE_URL
+              value: http://auth-service:8081
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: appointment-service
+spec:
+  selector:
+    app: appointment-service
+  ports:
+    - port: 8083
+      targetPort: 8083

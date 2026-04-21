@@ -1,5 +1,11 @@
 # 🚀 Docker & Kubernetes Update - Complete Summary
 
+## Patch Notes (2026-04-21)
+
+- Fixed env parsing errors across services by normalizing quoted env values (Firebase, Stripe, LiveKit).
+- Restored payment end-to-end: normalized Stripe keys and updated `appointment-service` to call payment-service in-cluster; added web-app same-origin verify proxy.
+- Fixed LiveKit Twirp URL parse; telemedicine room/token endpoints now return valid responses.
+
 ## Overview
 
 Successfully updated all Docker and Kubernetes configurations for the AI Telemedicine Microservices System across **9 microservices**, with complete optimization, containerization, and orchestration setup.

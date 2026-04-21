@@ -1,5 +1,12 @@
 # Docker & Kubernetes Update Summary
 
+## Patch Notes (2026-04-21)
+
+- Environment normalization: stripped wrapping quotes from sensitive env vars (Stripe, Firebase private key, LiveKit) across services to avoid runtime parse and authentication errors.
+- Payment & verification: `appointment-service` now calls `payment-service` via `PAYMENT_SERVICE_URL` (in-cluster DNS); web-app includes `/api/payments/verify` same-origin proxy to avoid CORS and gateway resolution issues.
+- Telemedicine: LiveKit URL parse fixed in `telemedicine-service`; token & room creation verified.
+- Deployment reminder: update `telemedicine-secrets` and other Kubernetes secrets to ensure values do not contain leading/trailing quotes.
+
 ## ✅ Completed Updates
 
 ### 1. **Kubernetes Configuration Updates**

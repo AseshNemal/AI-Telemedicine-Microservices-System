@@ -2,14 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: web-app
-  namespace: default
 spec:
   replicas: 1
-  strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
   selector:
     matchLabels:
       app: web-app
@@ -23,16 +17,19 @@ spec:
           image: web-app:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - name: http
-              containerPort: 3000
-
+            - containerPort: 3000
           env:
+            - name: PORT
+              value: "3000"
+            - name: HOSTNAME
+              value: "0.0.0.0"
+            - name: NODE_ENV
+              value: "production"
             - name: NEXT_PUBLIC_API_URL
               valueFrom:
                 configMapKeyRef:
                   name: telemedicine-config
                   key: NEXT_PUBLIC_API_URL
-            # ── Public service URLs (via API Gateway) ────────────────────────
             - name: NEXT_PUBLIC_AUTH_SERVICE_URL
               valueFrom:
                 configMapKeyRef:
@@ -68,18 +65,16 @@ spec:
                 configMapKeyRef:
                   name: telemedicine-config
                   key: NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL
-            - name: SYMPTOM_SERVICE_URL
+            - name: NEXT_PUBLIC_ADMIN_EMAIL
               valueFrom:
                 configMapKeyRef:
                   name: telemedicine-config
-                  key: SYMPTOM_SERVICE_URL
-            - name: API_GATEWAY_URL
+                  key: NEXT_PUBLIC_ADMIN_EMAIL
+            - name: NEXT_PUBLIC_ADMIN_PASSWORD
               valueFrom:
                 configMapKeyRef:
                   name: telemedicine-config
-                  key: API_GATEWAY_INTERNAL_URL
-
-            # ── Firebase (public vars) ────────────────────────────────────────
+                  key: NEXT_PUBLIC_ADMIN_PASSWORD
             - name: NEXT_PUBLIC_FIREBASE_PROJECT_ID
               valueFrom:
                 configMapKeyRef:
@@ -90,76 +85,41 @@ spec:
                 configMapKeyRef:
                   name: telemedicine-config
                   key: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
-
-            # ── Google OAuth ──────────────────────────────────────────────────
-            - name: GOOGLE_CLIENT_ID
-              valueFrom:
-                configMapKeyRef:
-                  name: telemedicine-config
-                  key: GOOGLE_CLIENT_ID
-
-            # ── LiveKit URL ───────────────────────────────────────────────────
-            - name: LIVEKIT_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: telemedicine-config
-                  key: LIVEKIT_URL
-
-            # ── Secrets ────────────────────────────────────────────────────────
             - name: NEXT_PUBLIC_FIREBASE_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: telemedicine-secrets
                   key: NEXT_PUBLIC_FIREBASE_API_KEY
-            - name: STRIPE_PUBLIC_KEY
+            - name: API_GATEWAY_URL
               valueFrom:
-                secretKeyRef:
-                  name: telemedicine-secrets
-                  key: STRIPE_PUBLIC_KEY
-            - name: GOOGLE_CLIENT_SECRET
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: API_GATEWAY_URL
+            - name: API_GATEWAY_INTERNAL_URL
               valueFrom:
-                secretKeyRef:
-                  name: telemedicine-secrets
-                  key: GOOGLE_CLIENT_SECRET
-
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: API_GATEWAY_INTERNAL_URL
+            - name: SYMPTOM_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: SYMPTOM_SERVICE_URL
           resources:
             requests:
-              memory: "128Mi"
               cpu: "100m"
-            limits:
               memory: "256Mi"
-              cpu: "300m"
-
-          livenessProbe:
-            httpGet:
-              path: /
-              port: http
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
-
-          readinessProbe:
-            httpGet:
-              path: /
-              port: http
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            timeoutSeconds: 3
-            failureThreshold: 2
-
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: web-app
-  namespace: default
 spec:
   selector:
     app: web-app
   ports:
-    - name: http
-      port: 3000
+    - port: 3000
       targetPort: 3000
-      protocol: TCP
-  type: LoadBalancer

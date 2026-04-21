@@ -18,7 +18,7 @@ Install the following before running:
 ## Quick Setup
 
 1. Ensure `.env` exists at project root (same level as `README.md`).
-2. Configure MongoDB + Firebase env values using `.env.example` or `deployments/kubernetes/secret.example.yaml` as templates.
+2. Configure MongoDB + Firebase env values using `.env.example` or the sample `secrets/secret.yaml` as templates.
 3. Do NOT commit real credentials into the repository. Keep secret files locally and under `.gitignore`.
 4. Place Firebase service account JSON and any other provider private files in a local `secrets/` folder that is gitignored (see `.gitignore`).
 5. (Optional) Use `.env.example` as a reference template.
@@ -63,6 +63,21 @@ cd web-app && npm run dev
 ```
 
 If backend services cannot call each other, it usually means one terminal started without loading `.env` first.
+
+## Recent fixes (2026-04-21)
+
+- Payment flow fixes:
+	- Normalized Stripe secret envs in `payment-service` (strips wrapping quotes) so API keys are accepted by Stripe.
+	- `appointment-service` now uses the in-cluster `PAYMENT_SERVICE_URL` (service DNS) instead of `localhost`.
+	- Added a same-origin verification proxy (`/api/payments/verify`) in the web app to avoid CORS and in-cluster gateway routing issues.
+- Firebase initialization:
+	- Fixed Firebase Admin initialization in `auth-service-node` and `patient-service-node` by normalizing quoted private-key and credential env values.
+- Telemedicine / LiveKit:
+	- Fixed Twirp URL parse errors by normalizing `LIVEKIT_URL` and LiveKit env values in `telemedicine-service`.
+	- `/telemedicine/rooms` and `/telemedicine/token` endpoints verified working (return valid room and token payloads).
+- Quick remediation notes:
+	- Ensure Kubernetes secrets do not include wrapping quotes (or rely on patched services that strip quotes).
+	- If frontend shows "Verification failed. Error: Failed to fetch", redeploy `web-app` with `API_GATEWAY_INTERNAL_URL` set and run `./k8s-up.sh --port-forward --port 8080`.
 
 ## 🚀 One-Command Run (Kubernetes)
 
@@ -154,9 +169,8 @@ AI Telemedicine Microservices System/
 │   ├── payment-service/
 │   └── AI-symptom-service/
 ├── web-app/
-├── deployments/
-│   ├── docker-compose.yml
-│   └── kubernetes/
+├── k8s/                # Kubernetes manifests (api-gateway, services, statefulsets)
+├── deploy/             # helper deploy assets (optional)
 ├── docs/
 │   └── architecture.md
 └── .env
@@ -270,8 +284,8 @@ Node service runtime mapping in Docker/K8s:
 
 ## Secrets & secure storage
 
-- This repository no longer contains real secret material. A template is provided at `deployments/kubernetes/secret.example.yaml`.
-- Do NOT add files with real credentials to the repo. Add them to `.gitignore` (this project already ignores `deployments/kubernetes/secret.yaml`).
+- This repository includes a sample secret YAML for local testing at `secrets/secret.yaml`. DO NOT use this as production credentials or commit real secrets.
+- Do NOT add files with real credentials to the repo. Keep provider files (Firebase service account JSON, etc.) in your private `secrets/` folder and ensure they are gitignored.
 
 Recommended workflows:
 
@@ -279,7 +293,7 @@ Recommended workflows:
 
 ```bash
 # from project root (example: create secret from a local env file)
-kubectl create secret generic telemedicine-secrets --from-env-file=./deployments/kubernetes/secret.example.env
+kubectl create secret generic telemedicine-secrets --from-env-file=./.env
 
 # or create from a local YAML file (keep it outside the repo if it contains real values)
 kubectl create secret generic telemedicine-secrets --from-file=secret.yaml=./path/to/local/secret.yaml
@@ -292,7 +306,7 @@ kubectl create secret generic telemedicine-secrets --from-file=secret.yaml=./pat
 git clone --mirror git@github.com:YOUR/REPO.git repo-backup.git
 
 # remove path from history (requires git-filter-repo)
-git filter-repo --path deployments/kubernetes/secret.yaml --invert-paths
+git filter-repo --path secrets/secret.yaml --invert-paths
 
 # force push cleaned history (coordinate with collaborators)
 git push --force --all
@@ -351,7 +365,7 @@ Use your local secret source and create the Kubernetes secret in `default` names
 ```bash
 # option A: from local env file
 kubectl create secret generic telemedicine-secrets \
-  --from-env-file=./deployments/kubernetes/secret.example.env \
+	--from-env-file=./.env \
   -n default \
   --dry-run=client -o yaml | kubectl apply -f -
 
@@ -365,19 +379,8 @@ kubectl create secret generic telemedicine-secrets \
 ### 4) Apply Kubernetes manifests
 
 ```bash
-kubectl apply -f deployments/kubernetes/configmap.yaml
-kubectl apply -f deployments/kubernetes/auth-deployment.yaml
-kubectl apply -f deployments/kubernetes/patient-deployment.yaml
-kubectl apply -f deployments/kubernetes/doctor-deployment.yaml
-kubectl apply -f deployments/kubernetes/appointment-deployment.yaml
-kubectl apply -f deployments/kubernetes/notification-deployment.yaml
-kubectl apply -f deployments/kubernetes/mongodb-payment-statefulset.yaml
-kubectl apply -f deployments/kubernetes/payment-deployment.yaml
-kubectl apply -f deployments/kubernetes/symptom-deployment.yaml
-kubectl apply -f deployments/kubernetes/telemedicine-deployment.yaml
-kubectl apply -f deployments/kubernetes/web-app-deployment.yaml
-kubectl apply -f deployments/kubernetes/api-gateway-deployment.yaml
-kubectl apply -f deployments/kubernetes/api-gateway-service.yaml
+# apply all manifests from the repo k8s/ directory
+kubectl apply -f k8s/
 ```
 
 ### 5) Wait for rollouts and check status
@@ -431,7 +434,7 @@ kubectl get events --sort-by=.metadata.creationTimestamp
 ### 8) Teardown
 
 ```bash
-kubectl delete -f deployments/kubernetes/
+kubectl delete -f k8s/
 ```
 
 ## Health Check (Kubernetes)
@@ -559,26 +562,21 @@ It covers:
 
 ## Kubernetes Manifest Inventory
 
-Current manifests under `deployments/kubernetes/` include:
+Current manifests under `k8s/` include (representative):
 
-- `configmap.yaml`
-- `auth-deployment.yaml`
-- `patient-deployment.yaml`
-- `doctor-deployment.yaml`
-- `appointment-deployment.yaml`
-- `notification-deployment.yaml`
-- `payment-deployment.yaml`
-- `mongodb-payment-statefulset.yaml`
-- `symptom-deployment.yaml`
-- `telemedicine-deployment.yaml`
-- `web-app-deployment.yaml`
-- `api-gateway-deployment.yaml`
-- `api-gateway-service.yaml`
-- `secret.example.yaml` (template only; do not apply as real secret)
-- `mongodb-payment-credentials.example.yaml` (template for payment MongoDB secret)
+- `api-gateway.yaml` / `api-gateway-config.yaml`
+- `auth.yaml`
+- `patient.yaml`
+- `doctor.yaml`
+- `appointment.yaml`
+- `notification.yaml`
+- `payment.yaml`
+- `mongodb-payment.yaml` (statefulset)
+- `symptom.yaml`
+- `telemedicine.yaml`
+- `web-app.yaml`
 
-> Real secrets should be created using `kubectl create secret ...` from local files or env values.
-> `secret.example.yaml` intentionally uses a non-runtime secret name (`telemedicine-secrets-example`) to avoid accidental overwrite of the runtime secret (`telemedicine-secrets`).
+Real secrets should be created using `kubectl create secret ...` from local files or env values. The repo includes an example at `secrets/secret.yaml` for local testing only.
 
 ## Kubernetes Quick Run (Recommended)
 
@@ -617,12 +615,12 @@ Useful script flags:
 Low-resource default profile:
 
 - Kubernetes manifests are tuned for low-resource local clusters (single replica per service, reduced CPU/memory requests).
-- If you need higher throughput/HA, increase `replicas` and resource limits in `deployments/kubernetes/*deployment.yaml`.
+- If you need higher throughput/HA, increase `replicas` and resource limits in the `k8s/` manifests.
 
 Teardown:
 
 ```bash
-kubectl delete -f deployments/kubernetes/
+kubectl delete -f k8s/
 ```
 
 Troubleshooting:
@@ -754,15 +752,15 @@ creates the Kubernetes secret from your local `.env` and applies the manifests.
 Usage (from repo root):
 ```bash
 # make script executable once
-chmod +x deploy/k8s-deploy.sh
-./deploy/k8s-deploy.sh
+chmod +x deploy-k8s.sh
+./deploy-k8s.sh
 ```
 
 What it does:
 - extracts shared secret env keys from your local `.env` into a temporary file (not committed)
 - creates/updates Firebase service account Kubernetes secret if local file exists
 - creates/updates the `telemedicine-secrets` Kubernetes Secret
-- applies all manifests under `deployments/kubernetes`
+- applies all manifests under `k8s/`
 - triggers rollout restarts so pods pick up the secret
 
 Notes:

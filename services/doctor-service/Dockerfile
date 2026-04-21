@@ -1,4 +1,4 @@
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /app
 
@@ -6,16 +6,21 @@ COPY go.mod go.sum* ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o doctor-service .
+
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o app .
 
 FROM alpine:3.20
 
 WORKDIR /app
-
-COPY --from=builder /app/doctor-service .
-
 RUN apk add --no-cache ca-certificates
+
+COPY --from=builder /app/app .
+
+RUN adduser -D appuser
+USER appuser
 
 EXPOSE 8082
 
-CMD ["./doctor-service"]
+CMD ["./app"]

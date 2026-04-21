@@ -1,4 +1,4 @@
-FROM node:22-alpine AS dependencies
+FROM node:22-alpine AS deps
 
 WORKDIR /app
 
@@ -8,38 +8,27 @@ RUN npm ci --no-audit --no-fund
 FROM node:22-alpine AS builder
 
 WORKDIR /app
-
-COPY --from=dependencies /app/node_modules ./node_modules
-
-COPY . .
-RUN npm run build
-
-FROM node:22-alpine
-
-WORKDIR /app
-
 ENV NODE_ENV=production
 
-# Copy the entire standalone bundle first. Depending on the build environment,
-# Next may emit either `/app/.next/standalone/server.js` or
-# `/app/.next/standalone/web-app/server.js`.
-COPY --from=builder /app/.next/standalone ./standalone
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/static ./.next/static
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
 
-RUN set -eux; \
-    SERVER_PATH="$(find ./standalone -maxdepth 3 -type f -name server.js | head -n 1)"; \
-    if [ -n "${SERVER_PATH}" ]; then \
-      SERVER_DIR="$(dirname "${SERVER_PATH}")"; \
-      cp -R "${SERVER_DIR}/". ./; \
-    else \
-      echo "Next standalone output missing server.js" >&2; \
-      find ./standalone -maxdepth 3 -type f | sort >&2; \
-      exit 1; \
-    fi; \
-    rm -rf ./standalone
+RUN npm run build
 
-RUN adduser -D nextjs && chown -R nextjs:nextjs /app
+FROM node:22-alpine AS runner
+
+WORKDIR /app
+ENV NODE_ENV=production
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+
+RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
+
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/public ./app/public
+COPY --from=builder /app/.next/static ./app/.next/static
+
+WORKDIR /app/app
 USER nextjs
 
 EXPOSE 3000

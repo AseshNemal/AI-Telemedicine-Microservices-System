@@ -1,0 +1,144 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-gateway-config
+data:
+  nginx.conf: |
+    events {}
+
+    http {
+      server {
+        listen 80 default_server;
+        server_name _;
+
+        location /health {
+          return 200 '{"status":"ok","service":"api-gateway"}';
+          add_header Content-Type application/json;
+        }
+
+        add_header 'Access-Control-Allow-Origin' '*' always;
+        add_header 'Access-Control-Allow-Methods' 'GET, POST, PUT, DELETE, OPTIONS, PATCH' always;
+        add_header 'Access-Control-Allow-Headers' 'Content-Type, Authorization, X-Requested-With, X-Internal-Service-Key' always;
+
+        if ($request_method = 'OPTIONS') {
+          return 204;
+        }
+
+        location = /api/auth {
+          return 301 /api/auth/;
+        }
+        location /api/auth/ {
+          rewrite ^/api/auth/(.*)$ /$1 break;
+          proxy_pass http://auth-service:8081;
+        }
+
+        location = /api/patients {
+          return 301 /api/patients/;
+        }
+        location /api/patients/ {
+          rewrite ^/api/patients/(.*)$ /api/patients/$1 break;
+          proxy_pass http://patient-service:5002;
+        }
+
+        location = /doctors {
+          proxy_pass http://doctor-service:8082/doctors;
+        }
+        location /doctors/ {
+          rewrite ^/doctors/(.*)$ /doctors/$1 break;
+          proxy_pass http://doctor-service:8082;
+        }
+        location = /api/doctors {
+          proxy_pass http://doctor-service:8082/doctors;
+        }
+        location /api/doctors/ {
+          rewrite ^/api/doctors/(.*)$ /doctors/$1 break;
+          proxy_pass http://doctor-service:8082;
+        }
+        location /doctor/ {
+          proxy_pass http://doctor-service:8082;
+        }
+        location /admin/ {
+          proxy_pass http://doctor-service:8082;
+        }
+
+        location = /appointments {
+          proxy_pass http://appointment-service:8083/appointments;
+        }
+        location /appointments/ {
+          rewrite ^/appointments/(.*)$ /appointments/$1 break;
+          proxy_pass http://appointment-service:8083;
+        }
+        location = /api/appointments {
+          proxy_pass http://appointment-service:8083/appointments;
+        }
+        location /api/appointments/ {
+          rewrite ^/api/appointments/(.*)$ /appointments/$1 break;
+          proxy_pass http://appointment-service:8083;
+        }
+
+        location = /notifications {
+          return 301 /notifications/;
+        }
+        location /notifications/ {
+          rewrite ^/notifications/(.*)$ /$1 break;
+          proxy_pass http://notification-service:8084;
+        }
+        location = /api/notifications {
+          return 301 /api/notifications/;
+        }
+        location /api/notifications/ {
+          rewrite ^/api/notifications/(.*)$ /$1 break;
+          proxy_pass http://notification-service:8084;
+        }
+
+        location = /payments {
+          return 301 /payments/;
+        }
+        location /payments/ {
+          rewrite ^/payments/(.*)$ /payments/$1 break;
+          proxy_pass http://payment-service:8085;
+        }
+        location = /api/payments {
+          return 301 /api/payments/;
+        }
+        location /api/payments/ {
+          rewrite ^/api/payments/(.*)$ /payments/$1 break;
+          proxy_pass http://payment-service:8085;
+        }
+
+        location = /telemedicine {
+          return 301 /telemedicine/;
+        }
+        location /telemedicine/ {
+          rewrite ^/telemedicine/(.*)$ /telemedicine/$1 break;
+          proxy_pass http://telemedicine-service:8086;
+        }
+        location = /api/telemedicine {
+          return 301 /api/telemedicine/;
+        }
+        location /api/telemedicine/ {
+          rewrite ^/api/telemedicine/(.*)$ /telemedicine/$1 break;
+          proxy_pass http://telemedicine-service:8086;
+        }
+
+        location = /symptoms {
+          return 301 /symptoms/;
+        }
+        location /symptoms/ {
+          rewrite ^/symptoms/(.*)$ /$1 break;
+          proxy_pass http://symptom-service:8091;
+        }
+        location = /api/symptoms {
+          return 301 /api/symptoms/;
+        }
+        location /api/symptoms/ {
+          rewrite ^/api/symptoms/(.*)$ /$1 break;
+          proxy_pass http://symptom-service:8091;
+        }
+
+        location / {
+          return 404 '{"error":"Not found","path":"$uri"}';
+          add_header Content-Type application/json;
+        }
+      }
+    }
