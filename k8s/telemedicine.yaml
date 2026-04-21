@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telemedicine-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telemedicine-service
+  template:
+    metadata:
+      labels:
+        app: telemedicine-service
+    spec:
+      containers:
+        - name: telemedicine-service
+          image: telemedicine-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8086
+          env:
+            - name: PORT
+              value: "8086"
+            - name: LIVEKIT_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: LIVEKIT_URL
+            - name: LIVEKIT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: LIVEKIT_API_KEY
+            - name: LIVEKIT_API_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: LIVEKIT_API_SECRET
+            - name: CORS_ALLOWED_ORIGINS
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: CORS_ALLOWED_ORIGINS
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: telemedicine-service
+spec:
+  selector:
+    app: telemedicine-service
+  ports:
+    - port: 8086
+      targetPort: 8086

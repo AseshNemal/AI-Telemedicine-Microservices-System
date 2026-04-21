@@ -87,6 +87,7 @@ PUBLIC_VARS=(
     "SYMPTOM_SERVICE_URL"
     "NOTIFICATION_SERVICE_URL"
     "API_GATEWAY_INTERNAL_URL"
+    "API_GATEWAY_URL"
     "NEXT_PUBLIC_API_URL"
     "NEXT_PUBLIC_AUTH_SERVICE_URL"
     "NEXT_PUBLIC_PATIENT_SERVICE_URL"
@@ -95,8 +96,15 @@ PUBLIC_VARS=(
     "NEXT_PUBLIC_PAYMENT_SERVICE_URL"
     "NEXT_PUBLIC_SYMPTOM_SERVICE_URL"
     "NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL"
+    "NEXT_PUBLIC_ADMIN_EMAIL"
+    "NEXT_PUBLIC_ADMIN_PASSWORD"
     "NEXT_PUBLIC_FIREBASE_PROJECT_ID"
     "NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN"
+    "NEXT_PUBLIC_STRIPE_PUBLIC_KEY"
+    "FRONTEND_BASE_URL"
+    "CORS_ALLOWED_ORIGINS"
+    "ADMIN_EMAIL"
+    "ADMIN_PASSWORD"
     "GOOGLE_CLIENT_ID"
     "LIVEKIT_URL"
     "FIREBASE_PROJECT_ID"
@@ -125,6 +133,7 @@ config_default() {
         SYMPTOM_SERVICE_URL) echo "http://symptom-service:${SYMPTOM_SERVICE_PORT:-8091}" ;;
         NOTIFICATION_SERVICE_URL) echo "http://notification-service:${NOTIFICATION_PORT:-8084}" ;;
         API_GATEWAY_INTERNAL_URL) echo "${API_GATEWAY_INTERNAL_URL:-http://api-gateway-nginx}" ;;
+        API_GATEWAY_URL) echo "${API_GATEWAY_URL:-http://api-gateway-nginx}" ;;
         NEXT_PUBLIC_API_URL) echo "${NEXT_PUBLIC_API_URL:-http://localhost:8080}" ;;
         # Public browser traffic must go through the gateway, not direct service ports.
         NEXT_PUBLIC_AUTH_SERVICE_URL) echo "${NEXT_PUBLIC_API_URL:-http://localhost:8080}" ;;
@@ -134,8 +143,16 @@ config_default() {
         NEXT_PUBLIC_PAYMENT_SERVICE_URL) echo "${NEXT_PUBLIC_API_URL:-http://localhost:8080}" ;;
         NEXT_PUBLIC_SYMPTOM_SERVICE_URL) echo "${NEXT_PUBLIC_API_URL:-http://localhost:8080}" ;;
         NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL) echo "${NEXT_PUBLIC_API_URL:-http://localhost:8080}" ;;
+        NEXT_PUBLIC_ADMIN_EMAIL) echo "${NEXT_PUBLIC_ADMIN_EMAIL:-${ADMIN_EMAIL:-}}" ;;
+        NEXT_PUBLIC_ADMIN_PASSWORD) echo "${NEXT_PUBLIC_ADMIN_PASSWORD:-${ADMIN_PASSWORD:-}}" ;;
         NEXT_PUBLIC_FIREBASE_PROJECT_ID) echo "${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-${FIREBASE_PROJECT_ID:-}}" ;;
         NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN) echo "${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}" ;;
+        NEXT_PUBLIC_STRIPE_PUBLIC_KEY) echo "${NEXT_PUBLIC_STRIPE_PUBLIC_KEY:-${STRIPE_PUBLIC_KEY:-}}" ;;
+        SYMPTOM_SERVICE_URL) echo "${SYMPTOM_SERVICE_URL:-http://symptom-service:${SYMPTOM_SERVICE_PORT:-8091}}" ;;
+        FRONTEND_BASE_URL) echo "${FRONTEND_BASE_URL:-http://localhost:3000}" ;;
+        CORS_ALLOWED_ORIGINS) echo "${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080,http://127.0.0.1:8080}" ;;
+        ADMIN_EMAIL) echo "${ADMIN_EMAIL:-}" ;;
+        ADMIN_PASSWORD) echo "${ADMIN_PASSWORD:-}" ;;
         GOOGLE_CLIENT_ID) echo "${GOOGLE_CLIENT_ID:-}" ;;
         LIVEKIT_URL) echo "${LIVEKIT_URL:-http://telemedicine-service:8086}" ;;
         FIREBASE_PROJECT_ID) echo "${FIREBASE_PROJECT_ID:-}" ;;
@@ -231,7 +248,7 @@ echo -e "${GREEN}✓ Secret created from .env${NC}\n"
 
 # Deploy all manifests (deployments, services, statefulsets, configmaps, secrets)
 echo -e "${YELLOW}Deploying services...${NC}"
-kubectl apply -f deployments/kubernetes -n "$NAMESPACE"
+kubectl apply -f k8s -n "$NAMESPACE"
 
 echo -e "${YELLOW}Re-applying generated ConfigMap/Secret from .env to override static placeholders...${NC}"
 kubectl create configmap telemedicine-config \
@@ -293,7 +310,7 @@ echo -e "\n${GREEN}✓ Deployment complete!${NC}\n"
 echo -e "${BLUE}Useful Commands:${NC}"
 echo "  View logs:         kubectl logs -f deployment/auth-service -n $NAMESPACE"
 echo "  Port forward:      kubectl port-forward svc/web-app 3000:3000 -n $NAMESPACE"
-echo "  Delete deployment: kubectl delete -f deployments/kubernetes/ -n $NAMESPACE"
+echo "  Delete deployment: kubectl delete -f k8s/ -n $NAMESPACE"
 echo "  Update secret:     kubectl set env deployment/auth-service <VAR>=<VALUE> -n $NAMESPACE"
 echo ""
 echo -e "${YELLOW}Note: All environment variables are loaded from .env file${NC}"

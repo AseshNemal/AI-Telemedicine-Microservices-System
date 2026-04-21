@@ -32,6 +32,8 @@ kubectl port-forward -n default svc/notification-service 8084:8084 > /dev/null 2
 NOTIFY_PID=$!
 kubectl port-forward -n default svc/payment-service 8085:8085 > /dev/null 2>&1 &
 PAY_PID=$!
+kubectl port-forward -n default svc/telemedicine-service 8086:8086 > /dev/null 2>&1 &
+TELEMED_PID=$!
 kubectl port-forward -n default svc/symptom-service 8091:8091 > /dev/null 2>&1 &
 SYMPTOM_PID=$!
 
@@ -41,6 +43,7 @@ echo "   - Doctor:      http://localhost:8082"
 echo "   - Appointment: http://localhost:8083"
 echo "   - Notification:http://localhost:8084"
 echo "   - Payment:     http://localhost:8085"
+echo "   - Telemedicine:http://localhost:8086"
 echo "   - Symptom:     http://localhost:8091"
 
 echo ""
@@ -52,7 +55,7 @@ echo ""
 echo "Press Ctrl+C to stop the port forwarding."
 
 # Trap Ctrl+C to clean up background processes
-trap "echo 'Stopping port forwarding...'; kill $GATEWAY_PID $WEB_PID $AUTH_PID $PATIENT_PID $DOCTOR_PID $APPT_PID $NOTIFY_PID $PAY_PID $SYMPTOM_PID; exit" INT
+trap "echo 'Stopping port forwarding...'; kill $GATEWAY_PID $WEB_PID $AUTH_PID $PATIENT_PID $DOCTOR_PID $APPT_PID $NOTIFY_PID $PAY_PID $TELEMED_PID $SYMPTOM_PID; exit" INT
 
 # Keep the script running to hold the port forwards open
 wait

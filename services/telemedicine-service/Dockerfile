@@ -21,6 +21,6 @@ COPY --from=builder /app/app .
 RUN adduser -D appuser
 USER appuser
 
-EXPOSE 8082
+EXPOSE 8086
 
 CMD ["./app"]

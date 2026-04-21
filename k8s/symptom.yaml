@@ -1,51 +1,51 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: doctor-service
+  name: symptom-service
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: doctor-service
+      app: symptom-service
   template:
     metadata:
       labels:
-        app: doctor-service
+        app: symptom-service
     spec:
       containers:
-        - name: doctor-service
-          image: doctor-service:latest
+        - name: symptom-service
+          image: symptom-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8082
+            - containerPort: 8091
           env:
-            - name: DATABASE_URL
+            - name: PORT
+              value: "8091"
+            - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: telemedicine-secrets
-                  key: DATABASE_URL
-            - name: AUTH_SERVICE_URL
-              value: http://auth-service:8081
-            - name: INTERNAL_SERVICE_KEY
+                  key: OPENAI_API_KEY
+            - name: OPENAI_MODEL
               valueFrom:
                 secretKeyRef:
                   name: telemedicine-secrets
-                  key: INTERNAL_SERVICE_KEY
+                  key: OPENAI_MODEL
           resources:
             requests:
               cpu: "100m"
               memory: "128Mi"
             limits:
-              cpu: "250m"
+              cpu: "300m"
               memory: "256Mi"
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: doctor-service
+  name: symptom-service
 spec:
   selector:
-    app: doctor-service
+    app: symptom-service
   ports:
-    - port: 8082
-      targetPort: 8082
+    - port: 8091
+      targetPort: 8091

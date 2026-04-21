@@ -76,13 +76,28 @@ wait_for_local_http() {
   return 1
 }
 
+wait_for_local_listener() {
+  local port="$1"
+  local attempts="${2:-20}"
+  local i
+
+  for ((i=1; i<=attempts; i++)); do
+    if port_is_listening "$port"; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  return 1
+}
+
 print_failure_hints() {
   local target="$1"
 
   log_warn "Possible fix for ${target}:"
   case "$target" in
     api-gateway-nginx)
-      echo "  - Check the mounted gateway config: kubectl get configmap api-gateway-nginx-config -n ${NAMESPACE} -o yaml"
+      echo "  - Check the mounted gateway config: kubectl get configmap api-gateway-config -n ${NAMESPACE} -o yaml"
       echo "  - Restart the gateway after config changes: kubectl rollout restart deployment/api-gateway-nginx -n ${NAMESPACE}"
       echo "  - Re-test locally: curl -i http://127.0.0.1:8080/health"
       ;;
@@ -132,6 +147,30 @@ start_port_forward_if_needed() {
   kubectl port-forward -n "$NAMESPACE" "svc/${service}" "${local_port}:${remote_port}" > /dev/null 2>&1 &
   local pf_pid=$!
   printf -v "$pid_var" '%s' "$pf_pid"
+}
+
+wait_for_port_forward() {
+  local service="$1"
+  local local_port="$2"
+  local pid="$3"
+  local path="${4:-/}"
+
+  if [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
+    log_err "${service} port-forward exited before becoming ready on localhost:${local_port}"
+    return 1
+  fi
+
+  if ! wait_for_local_listener "$local_port" 30; then
+    log_err "${service} port-forward never bound localhost:${local_port}"
+    return 1
+  fi
+
+  if ! wait_for_local_http "$local_port" 45 "$path"; then
+    log_err "${service} did not become reachable on localhost:${local_port}${path}"
+    return 1
+  fi
+
+  return 0
 }
 
 cleanup_port_forwards() {
@@ -280,9 +319,17 @@ start_port_forward() {
 
   PORT_FORWARD_PIDS=()
 
-  local GATEWAY_PID="" WEB_PID="" AUTH_PID="" PATIENT_PID="" DOCTOR_PID="" APPT_PID="" NOTIFY_PID="" PAY_PID="" SYMPTOM_PID=""
+  local GATEWAY_PID="" WEB_PID="" AUTH_PID="" PATIENT_PID="" DOCTOR_PID="" APPT_PID="" NOTIFY_PID="" PAY_PID="" TELEMED_PID="" SYMPTOM_PID=""
 
   start_port_forward_if_needed "api-gateway-nginx" "$PORT_FORWARD_PORT" 80 GATEWAY_PID "API Gateway"
+  PORT_FORWARD_PIDS=("$GATEWAY_PID")
+
+  if [[ -n "$GATEWAY_PID" ]] && ! wait_for_port_forward "API Gateway" "$PORT_FORWARD_PORT" "$GATEWAY_PID" "/health"; then
+    print_failure_hints "api-gateway-nginx"
+    cleanup_port_forwards
+    exit 1
+  fi
+
   start_port_forward_if_needed "web-app" 3000 3000 WEB_PID "Web Frontend"
   start_port_forward_if_needed "auth-service" 8081 8081 AUTH_PID "Auth Service"
   start_port_forward_if_needed "patient-service" 5002 5002 PATIENT_PID "Patient Service"
@@ -290,15 +337,13 @@ start_port_forward() {
   start_port_forward_if_needed "appointment-service" 8083 8083 APPT_PID "Appointment Service"
   start_port_forward_if_needed "notification-service" 8084 8084 NOTIFY_PID "Notification Service"
   start_port_forward_if_needed "payment-service" 8085 8085 PAY_PID "Payment Service"
+  start_port_forward_if_needed "telemedicine-service" 8086 8086 TELEMED_PID "Telemedicine Service"
   start_port_forward_if_needed "symptom-service" 8091 8091 SYMPTOM_PID "Symptom Service"
 
-  PORT_FORWARD_PIDS=("$GATEWAY_PID" "$WEB_PID" "$AUTH_PID" "$PATIENT_PID" "$DOCTOR_PID" "$APPT_PID" "$NOTIFY_PID" "$PAY_PID" "$SYMPTOM_PID")
+  PORT_FORWARD_PIDS=("$GATEWAY_PID" "$WEB_PID" "$AUTH_PID" "$PATIENT_PID" "$DOCTOR_PID" "$APPT_PID" "$NOTIFY_PID" "$PAY_PID" "$TELEMED_PID" "$SYMPTOM_PID")
 
-  if [[ -n "$GATEWAY_PID" ]] && ! wait_for_local_http "$PORT_FORWARD_PORT" 20 "/health"; then
-    log_err "API Gateway did not become reachable on localhost:${PORT_FORWARD_PORT}"
-    print_failure_hints "api-gateway-nginx"
-    cleanup_port_forwards
-    exit 1
+  if [[ -n "$WEB_PID" ]] && ! wait_for_local_listener 3000 30; then
+    log_warn "Web Frontend port-forward did not bind localhost:3000 before timeout"
   fi
 
   echo -e "\n✅ Success! Your apps and individual services are now exposed locally."
@@ -310,6 +355,7 @@ start_port_forward() {
   echo "   - Appointment:   http://localhost:8083"
   echo "   - Notification:  http://localhost:8084"
   echo "   - Payment:       http://localhost:8085"
+  echo "   - Telemedicine:  http://localhost:8086"
   echo "   - Symptom:       http://localhost:8091"
   echo ""
 

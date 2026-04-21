@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-app
+  template:
+    metadata:
+      labels:
+        app: web-app
+    spec:
+      containers:
+        - name: web-app
+          image: web-app:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            - name: HOSTNAME
+              value: "0.0.0.0"
+            - name: NODE_ENV
+              value: "production"
+            - name: NEXT_PUBLIC_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_API_URL
+            - name: NEXT_PUBLIC_AUTH_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_AUTH_SERVICE_URL
+            - name: NEXT_PUBLIC_PATIENT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_PATIENT_SERVICE_URL
+            - name: NEXT_PUBLIC_DOCTOR_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_DOCTOR_SERVICE_URL
+            - name: NEXT_PUBLIC_APPOINTMENT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_APPOINTMENT_SERVICE_URL
+            - name: NEXT_PUBLIC_PAYMENT_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_PAYMENT_SERVICE_URL
+            - name: NEXT_PUBLIC_SYMPTOM_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_SYMPTOM_SERVICE_URL
+            - name: NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_TELEMEDICINE_SERVICE_URL
+            - name: NEXT_PUBLIC_ADMIN_EMAIL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_ADMIN_EMAIL
+            - name: NEXT_PUBLIC_ADMIN_PASSWORD
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_ADMIN_PASSWORD
+            - name: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+            - name: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+            - name: NEXT_PUBLIC_FIREBASE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: NEXT_PUBLIC_FIREBASE_API_KEY
+            - name: API_GATEWAY_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: API_GATEWAY_URL
+            - name: SYMPTOM_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: SYMPTOM_SERVICE_URL
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-app
+spec:
+  selector:
+    app: web-app
+  ports:
+    - port: 3000
+      targetPort: 3000

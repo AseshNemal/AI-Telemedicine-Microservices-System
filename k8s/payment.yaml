@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-service
+  template:
+    metadata:
+      labels:
+        app: payment-service
+    spec:
+      containers:
+        - name: payment-service
+          image: payment-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8085
+          env:
+            - name: PORT
+              value: "8085"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: DATABASE_URL
+            - name: INTERNAL_SERVICE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: INTERNAL_SERVICE_KEY
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: STRIPE_SECRET_KEY
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: telemedicine-secrets
+                  key: STRIPE_WEBHOOK_SECRET
+            - name: APPOINTMENT_SERVICE_URL
+              value: http://appointment-service:8083
+            - name: FRONTEND_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: FRONTEND_BASE_URL
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+spec:
+  selector:
+    app: payment-service
+  ports:
+    - port: 8085
+      targetPort: 8085
