@@ -25,10 +25,20 @@ type LiveKitService struct {
 	roomClient *lksdk.RoomServiceClient
 }
 
+func normalizeEnvScalar(value string) string {
+	v := strings.TrimSpace(value)
+	if len(v) >= 2 {
+		if (v[0] == '"' && v[len(v)-1] == '"') || (v[0] == '\'' && v[len(v)-1] == '\'') {
+			v = v[1 : len(v)-1]
+		}
+	}
+	return strings.TrimSpace(v)
+}
+
 func NewLivekitServiceFromEnv() (*LiveKitService, error) {
-	apiKey := strings.TrimSpace(os.Getenv("LIVEKIT_API_KEY"))
-	apiSecret := strings.TrimSpace(os.Getenv("LIVEKIT_API_SECRET"))
-	wsURL := strings.TrimSpace(os.Getenv("LIVEKIT_URL"))
+	apiKey := normalizeEnvScalar(os.Getenv("LIVEKIT_API_KEY"))
+	apiSecret := normalizeEnvScalar(os.Getenv("LIVEKIT_API_SECRET"))
+	wsURL := normalizeEnvScalar(os.Getenv("LIVEKIT_URL"))
 
 	if apiKey == "" || apiSecret == "" || wsURL == "" {
 		return nil, errors.New("LIVEKIT_API_KEY, LIVEKIT_API_SECRET and LIVEKIT_URL are required")
@@ -181,6 +191,7 @@ func mapRoom(room *livekit.Room) *models.RoomResponse {
 }
 
 func toRoomServiceURL(livekitURL string) string {
+	livekitURL = normalizeEnvScalar(livekitURL)
 	if strings.HasPrefix(livekitURL, "wss://") {
 		return "https://" + strings.TrimPrefix(livekitURL, "wss://")
 	}

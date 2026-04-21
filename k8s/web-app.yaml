@@ -95,6 +95,11 @@ spec:
                 configMapKeyRef:
                   name: telemedicine-config
                   key: API_GATEWAY_URL
+            - name: API_GATEWAY_INTERNAL_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: telemedicine-config
+                  key: API_GATEWAY_INTERNAL_URL
             - name: SYMPTOM_SERVICE_URL
               valueFrom:
                 configMapKeyRef:

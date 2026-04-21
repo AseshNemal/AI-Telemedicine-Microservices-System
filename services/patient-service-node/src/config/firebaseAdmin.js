@@ -2,12 +2,29 @@ const fs = require('fs');
 const path = require('path');
 const admin = require('firebase-admin');
 
+const normalizeEnvValue = (value) => {
+    if (typeof value !== 'string') {
+        return value;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length >= 2) {
+        const first = trimmed[0];
+        const last = trimmed[trimmed.length - 1];
+        if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+            return trimmed.slice(1, -1);
+        }
+    }
+
+    return trimmed;
+};
+
 const parsePrivateKey = (privateKey) => {
     if (!privateKey) {
         return null;
     }
 
-    return privateKey.replace(/\\n/g, '\n');
+    return normalizeEnvValue(privateKey).replace(/\\n/g, '\n');
 };
 
 const resolveServiceAccountPath = (serviceAccountPath) => {
@@ -28,8 +45,8 @@ const resolveServiceAccountPath = (serviceAccountPath) => {
 };
 
 const buildCredentialsFromEnv = () => {
-    const projectId = process.env.FIREBASE_PROJECT_ID;
-    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+    const projectId = normalizeEnvValue(process.env.FIREBASE_PROJECT_ID);
+    const clientEmail = normalizeEnvValue(process.env.FIREBASE_CLIENT_EMAIL);
     const privateKey = parsePrivateKey(process.env.FIREBASE_PRIVATE_KEY);
 
     if (!projectId || !clientEmail || !privateKey) {

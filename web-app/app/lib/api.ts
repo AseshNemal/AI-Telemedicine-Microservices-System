@@ -944,7 +944,12 @@ export async function createDoctorAccount(payload: DoctorAccountCreateRequest) {
 }
 
 export async function verifyPayment(sessionId: string, idToken: string): Promise<PaymentVerifyResponse> {
-  const res = await fetch(`${paymentBase}/payments/verify?session_id=${encodeURIComponent(sessionId)}`, {
+  const verifyPath = `/api/payments/verify?session_id=${encodeURIComponent(sessionId)}`;
+  const verifyURL = typeof window !== "undefined"
+    ? verifyPath
+    : `${paymentBase}/payments/verify?session_id=${encodeURIComponent(sessionId)}`;
+
+  const res = await fetch(verifyURL, {
     method: "GET",
     cache: "no-store",
     headers: {

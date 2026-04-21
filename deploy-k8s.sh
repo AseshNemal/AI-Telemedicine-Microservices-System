@@ -29,11 +29,28 @@ if [ ! -f "$ENV_FILE" ]; then
     exit 1
 fi
 
-# Load environment variables from .env
+# Load environment variables from .env without shell sourcing.
+# This avoids breaking values that contain shell-special characters like & and ?.
 echo -e "${YELLOW}Loading environment variables from .env...${NC}"
-set -a
-. "$ENV_FILE"
-set +a
+load_env_file() {
+    local env_file="$1"
+    while IFS='=' read -r key value; do
+        # Ignore blank lines and comments
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+        # Trim whitespace from key
+        key="${key//[[:space:]]/}"
+        # Keep everything after the first '=' as the value
+        value="${value%$'\r'}"
+        if [[ "$value" =~ ^".*"$ ]]; then
+            value="${value:1:-1}"
+        elif [[ "$value" =~ ^'.*'$ ]]; then
+            value="${value:1:-1}"
+        fi
+        export "$key"="$value"
+    done < "$env_file"
+}
+
+load_env_file "$ENV_FILE"
 echo -e "${GREEN}✓ Environment loaded${NC}\n"
 
 # Check if kubectl is installed
@@ -206,7 +223,7 @@ SECRET_VARS=(
 # Build Secret directly from literals to support multiline values and safe defaults
 secret_default() {
     case "$1" in
-        DATABASE_URL) echo "${DATABASE_URL:-mongodb://admin:admin@mongodb-payment:27017/payment-db?authSource=admin}" ;;
+        DATABASE_URL) echo "${DATABASE_URL:-}" ;;
         FIREBASE_PROJECT_ID) echo "${FIREBASE_PROJECT_ID:-}" ;;
         FIREBASE_CLIENT_EMAIL) echo "${FIREBASE_CLIENT_EMAIL:-}" ;;
         FIREBASE_PRIVATE_KEY) echo "${FIREBASE_PRIVATE_KEY:-}" ;;

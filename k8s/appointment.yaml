@@ -33,6 +33,8 @@ spec:
               value: http://notification-service:8084
             - name: DOCTOR_SERVICE_URL
               value: http://doctor-service:8082
+            - name: PAYMENT_SERVICE_URL
+              value: http://payment-service:8085
             - name: AUTH_SERVICE_URL
               value: http://auth-service:8081
           resources:
