@@ -25,6 +25,11 @@ func (s *SymptomService) Chat(ctx context.Context, req model.SymptomChatRequest)
 		return model.SymptomChatResponse{}, errors.New("message is required")
 	}
 
+	// Fast path: skip OpenAI entirely for known symptom intents and simple follow-up answers.
+	if shouldUseDeterministicFlow(req) {
+		return updateAdaptiveQuestionFlow(req), nil
+	}
+
 	raw, err := s.aiClient.Chat(ctx, req, "")
 	if err != nil {
 		return updateAdaptiveQuestionFlow(req), nil
@@ -142,30 +147,38 @@ func shouldUseDeterministicFlow(req model.SymptomChatRequest) bool {
 	msg := strings.ToLower(strings.TrimSpace(req.Message))
 	t := strings.ToLower(strings.TrimSpace(req.Context.Type))
 
-	// If flow already started with a known type, continue deterministically.
-	switch t {
-	case "headache", "fever", "cough", "stomach pain", "cold", "cough and cold":
-		return true
-	}
-
-	// Start deterministic flow immediately for known symptom intents.
-	if strings.Contains(msg, "headache") || strings.Contains(msg, "migraine") ||
-		strings.Contains(msg, "fever") || strings.Contains(msg, "chill") ||
-		strings.Contains(msg, "cough") || strings.Contains(msg, "cold") ||
-		strings.Contains(msg, "stomach") || strings.Contains(msg, "abdomen") {
-		return true
-	}
-
-	// Very short option-style answers should remain deterministic once context exists.
-	if req.Context.Type != "" {
+	// Once a symptom type is known, only use the deterministic path for
+	// simple, unambiguous option-style answers. Free-form answers (e.g.
+	// "since this morning", "a couple of hours") must go to OpenAI so it can
+	// parse them correctly; if we route them here, inferDuration / inferSeverity
+	// may return "" → the same question repeats indefinitely.
+	if t != "" {
+		// Pure yes / no / not sure
 		if msg == "yes" || msg == "no" || msg == "not sure" {
 			return true
 		}
+		// Numeric severity (1-10 scale)
 		if _, err := strconv.Atoi(msg); err == nil {
 			return true
 		}
+		// Exact severity labels
+		if msg == "mild" || msg == "moderate" || msg == "severe" {
+			return true
+		}
+		// Exact duration option labels presented to the user
+		if msg == "today" || msg == "1-2 days ago" || msg == "3-5 days ago" ||
+			msg == "more than 5 days ago" {
+			return true
+		}
+		// Anything else is free-form — let OpenAI handle it.
+		return false
 	}
 
+	// For all initial messages (no type collected yet), send to OpenAI.
+	// It can extract type + duration + severity in one pass from a natural
+	// sentence like "headache for three days, moderate pain" — something the
+	// deterministic path cannot do (inferDuration only matches digit forms,
+	// not word-form numbers that speech recognition produces).
 	return false
 }
 

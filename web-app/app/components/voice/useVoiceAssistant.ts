@@ -35,10 +35,10 @@ type SymptomChatApiResponse = {
 
 const START_THRESHOLD = 0.08;
 const SILENCE_THRESHOLD = 0.03;
-const SILENCE_MS = 850;
+const SILENCE_MS = 500;
 const INTERRUPT_THRESHOLD = 0.18;
-const INTERRUPT_HOLD_MS = 350;
-const MIN_SPEAK_BEFORE_INTERRUPT_MS = 1200;
+const INTERRUPT_HOLD_MS = 280;
+const MIN_SPEAK_BEFORE_INTERRUPT_MS = 900;
 
 type SpeechRecognitionAlternativeLike = {
   transcript: string;
@@ -129,10 +129,26 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
   const lastAmplitudeRef = useRef(0);
   const contextRef = useRef<SymptomContext>({});
   const speakingStartedAtRef = useRef<number | null>(null);
+  const lastFinalResultRef = useRef<number | null>(null);
+  // Mirrors `state` in a ref so recognition.onresult (a stale closure) can
+  // read the current value without being re-registered on every state change.
+  const stateRef = useRef<VoiceState>('idle');
+  // Guards against double-send when both silence detection and the noisy-env
+  // fallback fire in the same animation frame.
+  const isSendingRef = useRef(false);
+  // Timestamp of when TTS finished. Recognition results arriving within
+  // POST_SPEAK_COOLDOWN_MS of this are discarded — they are buffered echoes
+  // of the assistant's own voice, not the user's reply.
+  const postSpeakCooldownRef = useRef<number | null>(null);
+  const POST_SPEAK_COOLDOWN_MS = 600;
 
   useEffect(() => {
     isListeningRef.current = isListening;
   }, [isListening]);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   // Initialize Speech Recognition
   useEffect(() => {
@@ -156,6 +172,16 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
     };
 
     recognition.onresult = (event: SpeechRecognitionEventLike) => {
+      // Discard results while speaking (echo guard).
+      if (stateRef.current === 'speaking') return;
+      // Also discard results arriving within the cooldown window after TTS ends.
+      // The browser buffers recognition results during playback and flushes them
+      // the moment onend fires — they are echoes of the assistant's own voice.
+      if (
+        postSpeakCooldownRef.current !== null &&
+        Date.now() - postSpeakCooldownRef.current < POST_SPEAK_COOLDOWN_MS
+      ) return;
+
       let interim = '';
       let final = '';
 
@@ -172,6 +198,7 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
       if (final) {
         setTranscript(final);
         silenceStartRef.current = Date.now();
+        lastFinalResultRef.current = Date.now();
       }
       if (interim) {
         setTranscript(final || interim);
@@ -206,16 +233,25 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
   }, []);
 
   const speakMessage = useCallback((message: string) => {
+    // Update the ref immediately — the useEffect sync lags one render behind,
+    // leaving a window where onresult could still accept echo input.
+    stateRef.current = 'speaking';
     setState('speaking');
     speakingStartedAtRef.current = Date.now();
 
+    // Wipe any transcript/timing accumulated before TTS starts so they
+    // can't be re-sent when we return to listening.
+    setTranscript('');
+    silenceStartRef.current = null;
+    lastFinalResultRef.current = null;
+    isSendingRef.current = false;
+
     const utterance = new SpeechSynthesisUtterance(message);
-    utterance.rate = 0.95;
+    utterance.rate = 1.15;
     utterance.pitch = 1;
-    utterance.volume = 0.8;
+    utterance.volume = 0.9;
 
     utterance.onboundary = () => {
-      // Update TTS pulse on word boundary for animation
       ttsPulseRef.current = 0.15;
       setTimeout(() => {
         ttsPulseRef.current = 0;
@@ -223,12 +259,25 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
     };
 
     utterance.onend = () => {
+      // Start cooldown — buffered echo results arriving now will be rejected.
+      postSpeakCooldownRef.current = Date.now();
+      setTranscript('');
+      silenceStartRef.current = null;
+      lastFinalResultRef.current = null;
+      isSendingRef.current = false;
+      stateRef.current = 'listening';
       setState('listening');
       ttsPulseRef.current = 0;
       speakingStartedAtRef.current = null;
     };
 
     utterance.onerror = () => {
+      postSpeakCooldownRef.current = Date.now();
+      setTranscript('');
+      silenceStartRef.current = null;
+      lastFinalResultRef.current = null;
+      isSendingRef.current = false;
+      stateRef.current = 'idle';
       setState('idle');
       ttsPulseRef.current = 0;
       speakingStartedAtRef.current = null;
@@ -239,6 +288,8 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
 
   const handleSendMessage = useCallback(async (msg: string) => {
     if (!msg.trim()) return;
+    if (isSendingRef.current) return;
+    isSendingRef.current = true;
 
     try {
       setState('processing');
@@ -280,11 +331,12 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
         : baseReply;
       
       // Truncate for voice while preserving sentence boundaries.
-      const truncated = truncateAtSentenceBoundary(botMessage, 420);
+      const truncated = truncateAtSentenceBoundary(botMessage, 240);
 
       setLastMessage(truncated);
       speakMessage(truncated);
     } catch (err) {
+      isSendingRef.current = false;
       setError(err instanceof Error ? err.message : 'Error sending message');
       setState('idle');
     }
@@ -343,6 +395,19 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
         interruptStartRef.current = null;
       }
 
+      // Noisy-environment fallback: if speech recognition produced a final
+      // result 1.5s ago but silence detection hasn't fired (because background
+      // noise keeps amplitude above SILENCE_THRESHOLD), send anyway.
+      if (state === 'listening' && lastFinalResultRef.current !== null) {
+        if (Date.now() - lastFinalResultRef.current > 1500 && transcript.trim()) {
+          void handleSendMessage(transcript);
+          setTranscript('');
+          setState('processing');
+          lastFinalResultRef.current = null;
+          silenceStartRef.current = null;
+        }
+      }
+
       // Silence detection for silence-based state transitions
       if (state === 'listening' && combinedAmplitude < SILENCE_THRESHOLD) {
         if (!silenceStartRef.current) {
@@ -352,6 +417,7 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
             void handleSendMessage(transcript);
             setTranscript('');
             setState('processing');
+            lastFinalResultRef.current = null;
           }
           silenceStartRef.current = null;
         }
@@ -441,6 +507,9 @@ export function useVoiceAssistant(): UseVoiceAssistantResult {
     contextRef.current = {};
     speakingStartedAtRef.current = null;
     ttsPulseRef.current = 0;
+    lastFinalResultRef.current = null;
+    isSendingRef.current = false;
+    postSpeakCooldownRef.current = null;
   }, []);
 
   return {
