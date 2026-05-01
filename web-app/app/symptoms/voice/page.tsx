@@ -1,7 +1,6 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import Link from 'next/link';
 import { Suspense } from 'react';
 
 const VoiceAssistantScreen = dynamic(
@@ -11,30 +10,21 @@ const VoiceAssistantScreen = dynamic(
   {
     ssr: false,
     loading: () => (
-      <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-        <div className="h-64 w-64 rounded-full bg-slate-800 animate-pulse" />
-      </main>
+      <div className="flex flex-1 items-center justify-center py-24">
+        <div className="h-56 w-56 rounded-full bg-slate-800 animate-pulse" />
+      </div>
     ),
   },
 );
 
 export default function SymptomsVoicePage() {
   return (
-    <main className="bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-      <div className="mx-auto flex w-full max-w-6xl justify-end px-4 pt-4">
-        <Link
-          href="/symptoms"
-          className="rounded-lg border border-slate-600 bg-slate-800/80 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-slate-700"
-        >
-          Back to Chat Mode
-        </Link>
-      </div>
-
+    <main className="min-h-screen bg-gradient-to-b from-slate-950 via-[#0d1a3a] to-slate-950">
       <Suspense
         fallback={
-          <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
-            <div className="h-64 w-64 rounded-full bg-slate-800 animate-pulse" />
-          </main>
+          <div className="flex items-center justify-center py-24">
+            <div className="h-56 w-56 rounded-full bg-slate-800 animate-pulse" />
+          </div>
         }
       >
         <VoiceAssistantScreen />

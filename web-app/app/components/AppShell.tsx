@@ -47,8 +47,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+  const isVoicePage = pathname === '/symptoms/voice';
+
   return (
-    <div className="min-h-screen bg-white">
+    <div className={`min-h-screen ${isVoicePage ? 'bg-slate-950' : 'bg-white'}`}>
       {/* Public nav */}
       <header className="sticky top-0 z-50 border-b border-slate-100 bg-white">
         <nav className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 md:px-8">

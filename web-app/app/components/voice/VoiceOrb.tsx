@@ -176,9 +176,9 @@ export function VoiceOrb({ state, amplitude }: VoiceOrbProps) {
       </motion.div>
 
       <motion.p
-        className="mt-6 text-sm font-medium text-slate-500"
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.2 }}
+        className="mt-6 text-xs font-semibold uppercase tracking-widest text-slate-400"
+        animate={{ opacity: state === 'idle' ? 0.5 : 1 }}
+        transition={{ delay: 0.2, duration: 0.3 }}
       >
         {stateLabel}
       </motion.p>
