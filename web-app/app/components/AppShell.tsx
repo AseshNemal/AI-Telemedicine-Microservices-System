@@ -14,7 +14,7 @@ function DashboardHeader({ role }: { role: "admin" | "doctor" }) {
     <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 md:px-8">
         <div className="flex items-center gap-3">
-          <span className={`inline-block h-2.5 w-2.5 rounded-full ${role === "admin" ? "bg-violet-500" : "bg-cyan-500"}`} />
+          <span className={`inline-block h-2.5 w-2.5 rounded-full ${role === "admin" ? "bg-violet-500" : "bg-blue-500"}`} />
           <div>
             <p className="text-[11px] uppercase tracking-[0.16em] text-slate-500">Secure workspace</p>
             <h1 className="text-sm font-semibold text-slate-900">{title}</h1>
@@ -36,8 +36,6 @@ function DashboardHeader({ role }: { role: "admin" | "doctor" }) {
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() || "";
   const isAdmin = pathname.startsWith("/admin");
-  // Match only the "/doctor" segment (e.g. "/doctor" or "/doctor/...")
-  // avoid matching "/doctors" which should use the public site header/footer
   const isDoctor = /^\/doctor(\/|$)/.test(pathname);
 
   if (isAdmin || isDoctor) {
@@ -50,73 +48,71 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-50 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
-        <div className="border-b border-slate-200/70 bg-slate-50/80">
-          <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-2 text-xs text-slate-600 md:px-8">
-            <p className="uppercase tracking-[0.16em]">Virtual care network</p>
-            <p>
-              Need immediate support? <span className="font-semibold text-slate-800">+1 (800) 555-CARE</span>
-            </p>
-          </div>
-        </div>
-
-        <nav className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 md:px-8">
-          <Link href="/" className="inline-flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm">
-            {/* Logo image: place your logo file at /public/logo.png */}
-            <img src="/logo.jpeg" alt="Telemedicine" className="h-auto w-auto object-contain  md:w-30" />
-            {/* Logo already includes the site name visually; keep an accessible label for screen readers */}
+    <div className="min-h-screen bg-white">
+      {/* Public nav */}
+      <header className="sticky top-0 z-50 border-b border-slate-100 bg-white">
+        <nav className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 md:px-8">
+          <Link href="/" className="flex items-center">
+            <img
+              src="/logo.jpeg"
+              alt="Telemedicine"
+              className="h-8 w-auto object-contain"
+            />
             <span className="sr-only">Telemedicine</span>
           </Link>
+
           <MainNav />
-          <HeaderAuthAction />
+
+          <div className="flex items-center gap-3">
+            <HeaderAuthAction />
+          </div>
         </nav>
       </header>
 
       {children}
 
-      <footer className="mt-14 border-t border-slate-200 bg-white/70">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 md:grid-cols-[1.2fr_0.8fr_0.8fr_1fr] md:px-8">
+      {/* Footer */}
+      <footer className="mt-20 bg-slate-900 text-white">
+        <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 md:grid-cols-3 md:px-8">
           <div>
-            <p className="section-kicker">Need help?</p>
-            <h2 className="mt-2 text-2xl font-bold text-slate-900">We are here to support your care journey.</h2>
-            <p className="mt-3 text-sm text-slate-600">
-              Connect with clinicians, manage appointments, and stay informed with secure digital care tools.
+            <img
+              src="/logo.jpeg"
+              alt="Telemedicine"
+              className="h-8 w-auto object-contain brightness-0 invert"
+            />
+            <p className="mt-4 max-w-xs text-sm leading-6 text-slate-400">
+              Connected telemedicine for patients, doctors, and care teams. Secure, fast, and accessible.
             </p>
+            <div className="mt-5 flex gap-3">
+              <a href="#" aria-label="Facebook" className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-700 text-xs text-white transition hover:bg-blue-600">f</a>
+              <a href="#" aria-label="Twitter" className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-700 text-xs text-white transition hover:bg-blue-600">t</a>
+              <a href="#" aria-label="Instagram" className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-700 text-xs text-white transition hover:bg-blue-600">in</a>
+            </div>
           </div>
 
-          <div className="text-sm text-slate-600">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Quick links</p>
-            <ul className="mt-3 space-y-2">
-              <li><Link href="/" className="hover:text-slate-900">Home</Link></li>
-              <li><Link href="/doctors" className="hover:text-slate-900">Doctors</Link></li>
-              <li><Link href="/appointments" className="hover:text-slate-900">Appointments</Link></li>
-              <li><Link href="/payments" className="hover:text-slate-900">Payments</Link></li>
-              <li><Link href="/symptoms" className="hover:text-slate-900">Symptoms</Link></li>
+          <div>
+            <p className="text-sm font-semibold text-white">Useful Links</p>
+            <ul className="mt-4 space-y-2.5 text-sm text-slate-400">
+              <li><Link href="/" className="transition hover:text-white">Home</Link></li>
+              <li><Link href="/doctors" className="transition hover:text-white">Doctors</Link></li>
+              <li><Link href="/appointments" className="transition hover:text-white">Appointments</Link></li>
+              <li><Link href="/payments" className="transition hover:text-white">Payments</Link></li>
+              <li><Link href="/symptoms" className="transition hover:text-white">Symptoms</Link></li>
             </ul>
           </div>
 
-          <div className="text-sm text-slate-600">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Resources</p>
-            <ul className="mt-3 space-y-2">
-              <li>Telemedicine onboarding</li>
-              <li>Virtual visit preparation</li>
-              <li>Care continuity guidance</li>
-              <li>Billing and payment support</li>
-            </ul>
-          </div>
-
-          <div className="text-sm text-slate-600">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Contact</p>
-            <ul className="mt-3 space-y-2">
+          <div>
+            <p className="text-sm font-semibold text-white">Address</p>
+            <ul className="mt-4 space-y-2.5 text-sm text-slate-400">
               <li>123 Fifth Ave, New York, NY</li>
               <li>+1 (800) 555-CARE</li>
               <li>care@telemedicine.example</li>
             </ul>
           </div>
         </div>
-        <div className="border-t border-slate-200/80 px-4 py-4 text-center text-xs text-slate-500 md:px-8">
-          © {new Date().getFullYear()} Telemedicine Care Platform. All rights reserved.
+
+        <div className="border-t border-slate-800 px-4 py-4 text-center text-xs text-slate-500 md:px-8">
+          © {new Date().getFullYear()} All Rights Reserved
         </div>
       </footer>
     </div>

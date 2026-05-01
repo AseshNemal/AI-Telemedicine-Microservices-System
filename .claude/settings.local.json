@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Skill(update-config)"
+      "Skill(update-config)",
+      "Bash(npm run *)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(curl *)",
+      "mcp__claude_ai_Figma__get_metadata"
     ]
   }
 }
