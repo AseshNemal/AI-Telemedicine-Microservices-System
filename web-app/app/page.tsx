@@ -1,123 +1,152 @@
+const specialistIcon = {
+  symptom: (
+    <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3.5" />
+      <path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22" />
+      <path d="M5.64 5.64l1.77 1.77M16.59 16.59l1.77 1.77M5.64 18.36l1.77-1.77M16.59 7.41l1.77-1.77" />
+    </svg>
+  ),
+  lungs: (
+    <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3v10" />
+      <path d="M6 8C4 9 3 11 3 14c0 3.5 2 5 4 5s3-1.5 3-3v-6" />
+      <path d="M18 8c2 1 3 3 3 6 0 3.5-2 5-4 5s-3-1.5-3-3v-6" />
+    </svg>
+  ),
+  calendar: (
+    <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <path d="M16 2v4M8 2v4M3 10h18" />
+      <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01" />
+    </svg>
+  ),
+  brain: (
+    <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9.5 2a2.5 2.5 0 1 1 0 5" />
+      <path d="M14.5 2a2.5 2.5 0 1 0 0 5" />
+      <path d="M12 7v13" />
+      <path d="M7 10a3 3 0 0 0-3 3v1a3 3 0 0 0 3 3h2" />
+      <path d="M17 10a3 3 0 0 1 3 3v1a3 3 0 0 1-3 3h-2" />
+    </svg>
+  ),
+};
+
+const specialists = [
+  {
+    key: "symptom",
+    title: "AI Symptom Check",
+    desc: "Adaptive triage guidance using AI based on your symptoms and health history.",
+    href: "/symptoms",
+    active: false,
+  },
+  {
+    key: "lungs",
+    title: "Telemedicine",
+    desc: "Live video consultations with licensed doctors from the comfort of your home.",
+    href: "/telemedicine",
+    active: true,
+  },
+  {
+    key: "calendar",
+    title: "Appointments",
+    desc: "Schedule, manage, and track your consultations with specialists easily.",
+    href: "/appointments",
+    active: false,
+  },
+  {
+    key: "brain",
+    title: "Mental Health",
+    desc: "Connect with certified therapists and mental wellness specialists online.",
+    href: "/doctors",
+    active: false,
+  },
+] as const;
+
 export default function Home() {
   return (
-    <main className="page-shell">
+    <main>
 
       {/* ── Hero ────────────────────────────────────────────────────── */}
-      <section className="hero-shell relative overflow-hidden">
-        <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-blue-100/60 blur-3xl" />
+      <section className="bg-blue-50">
+        <div className="mx-auto max-w-7xl px-4 pt-14 pb-0 md:px-8 md:pt-20">
+          <div className="grid items-end gap-10 md:grid-cols-[1fr_340px]">
 
-        <div className="relative grid gap-10 md:grid-cols-[1.3fr_0.7fr] md:items-center">
-          <div>
-            <p className="section-kicker">Trusted Digital Care Platform</p>
-            <h1 className="section-title">
-              Find &amp; Search Your{" "}
-              <span className="text-blue-600 underline decoration-blue-300 underline-offset-4">
-                Favourite
-              </span>{" "}
-              Doctor
-            </h1>
-            <p className="section-subtitle">
-              Access secure virtual care, intelligent symptom guidance, specialist
-              discovery, appointment scheduling, and streamlined billing in one
-              modern healthcare experience.
-            </p>
+            {/* Left */}
+            <div className="pb-10 md:pb-16">
+              <p className="section-kicker">Trusted Digital Care Platform</p>
+              <h1 className="section-title">
+                Find &amp; Search Your{" "}
+                <span className="text-blue-600 underline decoration-blue-300 decoration-wavy underline-offset-4">
+                  Favourite
+                </span>{" "}
+                Doctor
+              </h1>
+              <p className="section-subtitle">
+                Access secure virtual care, intelligent symptom guidance, specialist discovery,
+                appointment scheduling, and streamlined billing — all in one modern healthcare experience.
+              </p>
 
-            <div className="mt-7 flex flex-wrap gap-3">
-              <a href="/symptoms" className="btn-primary">Start Symptom Check</a>
-              <a href="/doctors" className="btn-secondary">Find Doctors</a>
-              <a href="/appointments" className="btn-secondary">Book Appointment</a>
+              <div className="mt-7 flex flex-wrap gap-3">
+                <a href="/symptoms" className="btn-primary">Start Symptom Check</a>
+                <a href="/doctors" className="btn-secondary">Find Doctors</a>
+                <a href="/appointments" className="btn-secondary">Book Appointment</a>
+              </div>
             </div>
 
-            {/* Stats bar */}
-            <div className="mt-8 grid grid-cols-3 overflow-hidden rounded-2xl bg-blue-600 text-white">
-              <div className="py-5 text-center">
-                <p className="text-2xl font-bold">24/7</p>
-                <p className="mt-0.5 text-xs text-blue-100">Online Support</p>
-              </div>
-              <div className="border-x border-blue-500 py-5 text-center">
-                <p className="text-2xl font-bold">100+</p>
-                <p className="mt-0.5 text-xs text-blue-100">Doctors</p>
-              </div>
-              <div className="py-5 text-center">
-                <p className="text-2xl font-bold">1M+</p>
-                <p className="mt-0.5 text-xs text-blue-100">Active Patients</p>
-              </div>
+            {/* Right: Doctor photo + blue circle */}
+            <div className="relative flex items-end justify-center">
+              <div className="absolute bottom-0 right-4 h-64 w-64 rounded-full bg-blue-200/80 md:h-80 md:w-80" />
+              <img
+                src="/doctor-hero.jpg"
+                alt="Doctor"
+                className="relative z-10 h-64 w-full rounded-t-3xl object-cover object-top md:h-80"
+              />
             </div>
           </div>
+        </div>
 
-          {/* Quick care card */}
-          <div className="surface-card !p-5 md:!p-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Quick Care Entry
-            </p>
-            <h2 className="mt-2 text-xl font-semibold text-slate-900">
-              How can we help today?
-            </h2>
-            <p className="mt-2 text-sm text-slate-500">
-              Choose your care path to begin a personalized consultation workflow.
-            </p>
-
-            <div className="mt-4 grid gap-2">
-              <a
-                href="/symptoms"
-                className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 transition hover:bg-blue-100"
-              >
-                AI Symptom Checker
-              </a>
-              <a
-                href="/appointments"
-                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                Schedule Consultation
-              </a>
-              <a
-                href="/payments"
-                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
-              >
-                Manage Payments
-              </a>
+        {/* Stats bar */}
+        <div className="bg-blue-600">
+          <div className="mx-auto grid max-w-7xl grid-cols-3 px-4 text-white md:px-8">
+            <div className="border-r border-blue-500 py-5 text-center">
+              <p className="text-2xl font-bold md:text-3xl">24/7</p>
+              <p className="mt-0.5 text-xs text-blue-100">Online Support</p>
             </div>
-
-            <p className="mt-4 text-xs text-slate-400">
-              For urgent medical emergencies, contact your local emergency services immediately.
-            </p>
+            <div className="border-r border-blue-500 py-5 text-center">
+              <p className="text-2xl font-bold md:text-3xl">100+</p>
+              <p className="mt-0.5 text-xs text-blue-100">Doctors</p>
+            </div>
+            <div className="py-5 text-center">
+              <p className="text-2xl font-bold md:text-3xl">1M+</p>
+              <p className="mt-0.5 text-xs text-blue-100">Active Patients</p>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* ── Our Consulting Services ──────────────────────────────────── */}
-      <section>
-        <div className="text-center">
-          <p className="section-kicker">What We Offer</p>
-          <h2 className="mt-2 text-2xl font-bold text-slate-900 md:text-3xl">
-            Our Consulting Services
-          </h2>
-        </div>
+      {/* ── Our Consulting Specialists ───────────────────────────────── */}
+      <section className="mx-auto max-w-7xl px-4 py-16 md:px-8">
+        <h2 className="text-2xl font-bold text-slate-900 md:text-3xl">Our Consulting Specialists</h2>
 
         <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            { icon: "🩺", title: "AI Symptom Checker", desc: "Adaptive triage guidance based on patient responses and symptoms.", href: "/symptoms", active: false },
-            { icon: "📹", title: "Telemedicine", desc: "Virtual consultation workflows with live video and care sessions.", href: "/telemedicine", active: true },
-            { icon: "📅", title: "Appointments", desc: "Consultation scheduling, confirmations, and care timelines.", href: "/appointments", active: false },
-            { icon: "🧠", title: "Mental Health", desc: "Connect with specialists for mental wellness and support.", href: "/doctors", active: false },
-          ].map(({ icon, title, desc, href, active }) => (
+          {specialists.map(({ key, title, desc, href, active }) => (
             <a
-              key={title}
+              key={key}
               href={href}
-              className={`rounded-2xl border p-6 text-center transition hover:-translate-y-1 hover:shadow-md ${
+              className={`group rounded-2xl border p-6 transition hover:-translate-y-1 hover:shadow-md ${
                 active
-                  ? "border-blue-500 bg-blue-600 text-white"
-                  : "border-slate-100 bg-white text-slate-700 hover:border-blue-200"
+                  ? "border-blue-600 bg-blue-600 text-white"
+                  : "border-slate-100 bg-white hover:border-blue-200"
               }`}
             >
               <div
-                className={`mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full text-2xl ${
-                  active ? "bg-white/20" : "bg-blue-50"
+                className={`mb-4 flex h-12 w-12 items-center justify-center rounded-full ${
+                  active ? "bg-white/20 text-white" : "bg-blue-50 text-blue-600"
                 }`}
               >
-                {icon}
+                {specialistIcon[key]}
               </div>
-              <h3 className={`text-sm font-semibold ${active ? "text-white" : "text-slate-800"}`}>
+              <h3 className={`text-sm font-semibold ${active ? "text-white" : "text-slate-900"}`}>
                 {title}
               </h3>
               <p className={`mt-2 text-xs leading-5 ${active ? "text-blue-100" : "text-slate-500"}`}>
@@ -128,129 +157,154 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Why Choose Us ───────────────────────────────────────────── */}
-      <section className="grid items-center gap-10 md:grid-cols-2">
-        {/* Image placeholder */}
-        <div className="relative h-72 overflow-hidden rounded-3xl bg-gradient-to-br from-blue-100 to-blue-50 md:h-96">
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-blue-300">
-            <svg className="h-20 w-20" fill="none" stroke="currentColor" strokeWidth={1.2} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-            </svg>
-            <p className="text-sm font-medium">Clinical Excellence</p>
+      {/* ── Why You Choose Us ────────────────────────────────────────── */}
+      <section className="bg-white py-16">
+        <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 md:grid-cols-2 md:px-8">
+          <div className="overflow-hidden rounded-3xl">
+            <img
+              src="/surgeon.jpg"
+              alt="Surgeon"
+              className="h-96 w-full object-cover"
+            />
+          </div>
+
+          <div>
+            <p className="section-kicker">Why You Choose Us</p>
+            <h2 className="mt-2 text-2xl font-bold text-slate-900 md:text-3xl">
+              Why You Choose Us?
+            </h2>
+
+            <ul className="mt-6 space-y-4 text-sm text-slate-600">
+              {[
+                "Guided symptom flow that supports informed next steps",
+                "Integrated appointments, payments, and notifications",
+                "Scalable architecture for healthcare organizations of all sizes",
+                "Clear pathways for patients, doctors, and administrators",
+                "Secure, Firebase-authenticated access for all roles",
+              ].map((item) => (
+                <li key={item} className="flex items-start gap-3">
+                  <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
+                    ✓
+                  </span>
+                  {item}
+                </li>
+              ))}
+            </ul>
+
+            <a href="/doctors" className="btn-primary mt-8 inline-block">
+              Learn More →
+            </a>
           </div>
         </div>
-
-        <div>
-          <p className="section-kicker">Why You Choose Us</p>
-          <h2 className="mt-2 text-2xl font-bold text-slate-900 md:text-3xl">
-            Built for Clinical Confidence and Patient Trust
-          </h2>
-          <ul className="mt-6 space-y-4 text-sm text-slate-600">
-            {[
-              "Guided symptom flow that supports informed next steps",
-              "Integrated appointments, payments, and notifications",
-              "Scalable architecture for healthcare organizations of all sizes",
-              "Clear pathways for patients, doctors, and administrators",
-            ].map((item) => (
-              <li key={item} className="flex items-start gap-3">
-                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">
-                  ✓
-                </span>
-                {item}
-              </li>
-            ))}
-          </ul>
-          <a href="/doctors" className="btn-primary mt-7 inline-block">
-            Learn More →
-          </a>
-        </div>
       </section>
 
-      {/* ── For Patients / Doctors / Admins ─────────────────────────── */}
-      <section className="grid gap-4 md:grid-cols-3">
-        <article className="surface-card border-t-4 border-t-blue-500">
-          <h3 className="text-lg font-semibold text-slate-900">For Patients</h3>
-          <p className="mt-2 text-sm text-slate-500">
-            Start triage, connect with clinicians, manage visits, and receive follow-up guidance from anywhere.
-          </p>
-        </article>
-        <article className="surface-card border-t-4 border-t-indigo-500">
-          <h3 className="text-lg font-semibold text-slate-900">For Doctors</h3>
-          <p className="mt-2 text-sm text-slate-500">
-            Manage schedules, review patient history, coordinate teleconsultations, and improve care continuity.
-          </p>
-        </article>
-        <article className="surface-card border-t-4 border-t-cyan-500">
-          <h3 className="text-lg font-semibold text-slate-900">For Administrators</h3>
-          <p className="mt-2 text-sm text-slate-500">
-            Oversee service performance, notifications, billing integrity, and platform governance in one place.
-          </p>
-        </article>
-      </section>
+      {/* ── What Our Members Say ─────────────────────────────────────── */}
+      <section className="bg-slate-50 py-16">
+        <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 md:grid-cols-2 md:px-8">
 
-      {/* ── Platform Architecture ────────────────────────────────────── */}
-      <section className="surface-card">
-        <div>
-          <p className="section-kicker">Platform Architecture</p>
-          <h2 className="mt-2 text-2xl font-bold text-slate-900 md:text-3xl">
-            Core Microservices Powering Care Delivery
-          </h2>
-          <p className="mt-2 max-w-3xl text-sm text-slate-500">
-            Our frontend integrates seamlessly with the complete telemedicine ecosystem,
-            including production-ready and evolving services.
-          </p>
-        </div>
+          <div>
+            <p className="section-kicker">Testimonials</p>
+            <h2 className="mt-2 text-2xl font-bold text-slate-900 md:text-3xl">
+              What Our{" "}
+              <span className="text-blue-600">Member&apos;s</span>{" "}
+              Saying About Us
+            </h2>
+            <p className="mt-3 text-sm text-slate-500">
+              Thousands of patients trust our platform for fast, reliable, and compassionate digital healthcare.
+            </p>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            ["API Gateway", "Unified and secure entry point for all client-facing requests."],
-            ["Auth Service", "Identity, access control, and secure user session management."],
-            ["Patient Service", "Patient profiles, records, and personalized care context."],
-            ["Doctor Service", "Doctor directory, availability, and specialty management."],
-            ["Appointment Service", "Consultation scheduling, confirmations, and care timelines."],
-            ["Telemedicine Service", "Virtual consultation workflows and care session support."],
-            ["Payment Service", "Transparent and secure digital billing and transaction handling."],
-            ["Notification Service", "Real-time alerts through email and SMS touchpoints."],
-            ["Admin Service", "Operational oversight, policy controls, and service governance."],
-            ["AI Symptom Checker", "Adaptive triage guidance based on patient responses."],
-          ].map(([name, desc]) => (
-            <article
-              key={name}
-              className="rounded-2xl border border-slate-100 bg-slate-50 p-4 transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-sm"
-            >
-              <div className="mb-2 flex h-7 w-7 items-center justify-center rounded-lg bg-blue-600 text-[10px] font-bold text-white">
-                {name.slice(0, 1)}
+            <div className="mt-6 flex items-center gap-2">
+              {[...Array(5)].map((_, i) => (
+                <div
+                  key={i}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-blue-100 text-xs font-bold text-blue-600 shadow-sm"
+                >
+                  {["JC", "MR", "AS", "PK", "LT"][i]}
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-sm font-semibold text-slate-700">100+ Reviews</p>
+          </div>
+
+          <div className="surface-card">
+            <div className="flex items-center gap-3">
+              <img
+                src="/avatar-jane.jpg"
+                alt="Jane Cooper"
+                className="h-12 w-12 rounded-full object-cover"
+              />
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Jane Cooper</p>
+                <p className="text-xs text-slate-500">Verified Patient</p>
               </div>
-              <h3 className="text-sm font-semibold text-slate-900">{name}</h3>
-              <p className="mt-1 text-xs text-slate-500">{desc}</p>
-            </article>
-          ))}
+              <div className="ml-auto flex text-yellow-400">
+                {"★★★★★"}
+              </div>
+            </div>
+            <p className="mt-4 text-sm leading-6 text-slate-600">
+              &ldquo;The telemedicine service was absolutely outstanding. I consulted a specialist within minutes from home — no waiting rooms, no travel. The AI symptom checker guided me perfectly before the appointment. Highly recommended!&rdquo;
+            </p>
+          </div>
         </div>
       </section>
 
-      {/* ── Newsletter / CTA ─────────────────────────────────────────── */}
-      <section className="rounded-3xl bg-blue-600 px-8 py-16 text-center text-white">
-        <h2 className="text-2xl font-bold md:text-3xl">
-          Begin Your Digital Care Journey
-        </h2>
-        <p className="mx-auto mt-3 max-w-lg text-sm text-blue-100">
-          Start with AI-guided symptom assessment or directly book a consultation
-          with the right specialist for your needs.
-        </p>
-        <div className="mt-8 flex flex-wrap justify-center gap-3">
-          <a
-            href="/symptoms"
-            className="rounded-xl bg-white px-6 py-3 text-sm font-semibold text-blue-600 transition hover:bg-blue-50"
-          >
-            Check Symptoms
-          </a>
-          <a
-            href="/appointments"
-            className="rounded-xl border border-white/40 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
-          >
-            Book Now
-          </a>
+      {/* ── The Future of Quality Health ─────────────────────────────── */}
+      <section className="mx-auto max-w-7xl px-4 py-16 md:px-8">
+        <div className="grid items-center gap-10 md:grid-cols-2">
+          <div>
+            <p className="section-kicker">Healthcare Innovation</p>
+            <h2 className="mt-2 text-2xl font-bold text-slate-900 md:text-3xl">
+              The Future of{" "}
+              <span className="text-blue-600">Quality Health</span>
+            </h2>
+            <p className="mt-4 text-sm leading-6 text-slate-500">
+              Our platform bridges the gap between patients and world-class healthcare professionals
+              through cutting-edge telemedicine technology. From AI-powered symptom analysis to
+              real-time video consultations, we are redefining how healthcare is delivered.
+            </p>
+            <p className="mt-3 text-sm leading-6 text-slate-500">
+              Whether you need urgent triage, specialist advice, or ongoing care management,
+              our distributed microservices platform ensures fast, secure, and seamless access
+              to the care you deserve — anytime, anywhere.
+            </p>
+            <a href="/symptoms" className="btn-primary mt-7 inline-block">
+              Learn More →
+            </a>
+          </div>
+
+          <div className="overflow-hidden rounded-3xl">
+            <img
+              src="/doctor-patient.jpg"
+              alt="Doctor consulting patient"
+              className="h-80 w-full object-cover"
+            />
+          </div>
         </div>
+      </section>
+
+      {/* ── Subscribe to Newsletter ──────────────────────────────────── */}
+      <section className="bg-blue-600 px-4 py-16 text-center text-white md:px-8">
+        <h2 className="text-2xl font-bold md:text-3xl">Subscribe To Our Newsletter</h2>
+        <p className="mx-auto mt-3 max-w-md text-sm text-blue-100">
+          Stay updated with the latest health tips, service updates, and exclusive offers from our care platform.
+        </p>
+        <form
+          className="mx-auto mt-8 flex max-w-md overflow-hidden rounded-full bg-white shadow-lg"
+        >
+          <input
+            type="email"
+            placeholder="Enter your email address..."
+            className="flex-1 bg-transparent px-5 py-3 text-sm text-slate-700 outline-none placeholder:text-slate-400"
+          />
+          <button
+            type="submit"
+            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white transition hover:bg-blue-700"
+          >
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </button>
+        </form>
       </section>
 
     </main>

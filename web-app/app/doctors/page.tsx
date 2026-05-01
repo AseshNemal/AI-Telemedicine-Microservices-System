@@ -12,17 +12,17 @@ export default function DoctorsPage() {
         </p>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <article className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+          <article className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">01</p>
             <h3 className="mt-1 text-sm font-semibold text-slate-900">Search</h3>
             <p className="mt-1 text-xs text-slate-600">Filter by specialty to narrow your options quickly.</p>
           </article>
-          <article className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+          <article className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">02</p>
             <h3 className="mt-1 text-sm font-semibold text-slate-900">Compare</h3>
             <p className="mt-1 text-xs text-slate-600">Review hospitals and availability for each doctor.</p>
           </article>
-          <article className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+          <article className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">03</p>
             <h3 className="mt-1 text-sm font-semibold text-slate-900">Book</h3>
             <p className="mt-1 text-xs text-slate-600">Continue to appointments when you find your fit.</p>

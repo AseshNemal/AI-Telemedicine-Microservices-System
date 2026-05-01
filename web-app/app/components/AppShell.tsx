@@ -75,11 +75,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <footer className="mt-20 bg-slate-900 text-white">
         <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 md:grid-cols-3 md:px-8">
           <div>
-            <img
-              src="/logo.jpeg"
-              alt="Telemedicine"
-              className="h-8 w-auto object-contain brightness-0 invert"
-            />
+            <div className="inline-flex items-center rounded-lg bg-white px-2 py-1">
+              <img
+                src="/logo.jpeg"
+                alt="Telemedicine"
+                className="h-6 w-auto object-contain"
+              />
+            </div>
             <p className="mt-4 max-w-xs text-sm leading-6 text-slate-400">
               Connected telemedicine for patients, doctors, and care teams. Secure, fast, and accessible.
             </p>

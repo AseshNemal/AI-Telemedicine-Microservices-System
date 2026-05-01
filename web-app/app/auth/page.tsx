@@ -158,13 +158,13 @@ export default function AuthPage() {
 
   return (
     <main className="mx-auto min-h-[calc(100vh-180px)] w-full max-w-6xl px-4 py-8 md:px-8 md:py-12">
-      <div className="overflow-hidden rounded-[30px] border border-slate-200 bg-[linear-gradient(120deg,#0f172a_0%,#102a43_45%,#124559_100%)] shadow-[0_24px_80px_rgba(2,6,23,0.35)]">
+      <div className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-sm">
         <div className="grid md:grid-cols-[1.05fr_1fr]">
-          <section className="relative overflow-hidden px-8 py-12 text-white md:px-12 md:py-14">
-            <div className="absolute -left-14 top-12 h-44 w-44 rounded-full bg-cyan-300/20 blur-3xl" />
-            <div className="absolute bottom-0 right-0 h-56 w-56 rounded-full bg-amber-300/20 blur-3xl" />
+          <section className="relative overflow-hidden bg-blue-600 px-8 py-12 text-white md:px-12 md:py-14">
+            <div className="absolute -left-14 top-12 h-44 w-44 rounded-full bg-blue-400/30 blur-3xl" />
+            <div className="absolute bottom-0 right-0 h-56 w-56 rounded-full bg-blue-300/20 blur-3xl" />
             <div className="relative space-y-5">
-              <p className="inline-flex rounded-full border border-cyan-200/40 bg-cyan-100/10 px-3 py-1 text-xs tracking-[0.16em] text-cyan-100">
+              <p className="inline-flex rounded-full border border-white/30 bg-white/10 px-3 py-1 text-xs tracking-[0.16em] text-blue-100">
                 TELEMEDICINE ACCESS
               </p>
               <h1 className="max-w-md text-4xl font-black leading-tight md:text-5xl">
@@ -173,10 +173,10 @@ export default function AuthPage() {
               <p className="max-w-md text-base text-slate-100/85 md:text-lg">
                 Use your email or Google account to access appointments, records, and tele-consultation sessions.
               </p>
-              <div className="mt-8 grid max-w-md grid-cols-3 gap-3 text-xs text-slate-100/90">
-                <div className="rounded-xl border border-white/20 bg-white/10 px-3 py-2">OAuth</div>
-                <div className="rounded-xl border border-white/20 bg-white/10 px-3 py-2">JWT Ready</div>
-                <div className="rounded-xl border border-white/20 bg-white/10 px-3 py-2">HIPAA-minded</div>
+              <div className="mt-8 grid max-w-md grid-cols-3 gap-3 text-xs text-blue-100">
+                <div className="rounded-xl border border-white/25 bg-white/10 px-3 py-2">OAuth</div>
+                <div className="rounded-xl border border-white/25 bg-white/10 px-3 py-2">JWT Ready</div>
+                <div className="rounded-xl border border-white/25 bg-white/10 px-3 py-2">HIPAA-minded</div>
               </div>
             </div>
           </section>
@@ -191,7 +191,7 @@ export default function AuthPage() {
                     setError(null);
                   }}
                   className={`rounded-full px-4 py-1.5 transition ${
-                    mode === "login" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"
+                    mode === "login" ? "bg-blue-600 text-white" : "text-slate-700 hover:bg-slate-100"
                   }`}
                 >
                   Login
@@ -203,7 +203,7 @@ export default function AuthPage() {
                     setError(null);
                   }}
                   className={`rounded-full px-4 py-1.5 transition ${
-                    mode === "register" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"
+                    mode === "register" ? "bg-blue-600 text-white" : "text-slate-700 hover:bg-slate-100"
                   }`}
                 >
                   Register
@@ -222,7 +222,7 @@ export default function AuthPage() {
                     <input
                       name="email"
                       type="email"
-                      className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none transition focus:border-cyan-500"
+                      className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none transition focus:border-blue-500"
                       required
                     />
                   </label>
@@ -232,13 +232,13 @@ export default function AuthPage() {
                     <input
                       name="password"
                       type="password"
-                      className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none transition focus:border-cyan-500"
+                      className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none transition focus:border-blue-500"
                       required
                     />
                   </label>
 
                   <button
-                    className="h-11 w-full rounded-xl bg-slate-900 px-4 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="h-11 w-full rounded-xl bg-blue-600 px-4 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                     type="submit"
                     disabled={loading}
                   >
@@ -260,7 +260,7 @@ export default function AuthPage() {
                         type="button"
                         onClick={fillAdminDemoCredentials}
                         disabled={loading}
-                        className="h-10 w-full rounded-xl border border-dashed border-cyan-300 bg-cyan-50 px-4 text-xs font-semibold text-cyan-800 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="h-10 w-full rounded-xl border border-dashed border-blue-300 bg-blue-50 px-4 text-xs font-semibold text-blue-800 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         Use admin demo credentials
                       </button>
@@ -281,29 +281,29 @@ export default function AuthPage() {
                   <input
                     name="name"
                     placeholder="Full Name"
-                    className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500"
+                    className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
                     required
                   />
                   <input
                     name="email"
                     type="email"
                     placeholder="Email"
-                    className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500"
+                    className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
                     required
                   />
                   <input
                     name="password"
                     type="password"
                     placeholder="Password"
-                    className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500"
+                    className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
                     required
                   />
-                  <p className="rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs text-cyan-900">
+                  <p className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
                     This form creates patient accounts only.
                   </p>
 
                   <button
-                    className="h-11 w-full rounded-xl bg-amber-500 px-4 text-sm font-bold text-slate-900 transition hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="h-11 w-full rounded-xl bg-blue-600 px-4 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                     type="submit"
                     disabled={loading}
                   >
@@ -312,8 +312,8 @@ export default function AuthPage() {
                 </form>
               )}
 
-              {loginMessage && <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{loginMessage}</p>}
-              {registerMessage && <p className="rounded-xl bg-teal-50 px-3 py-2 text-sm text-teal-700">{registerMessage}</p>}
+              {loginMessage && <p className="rounded-xl bg-green-50 px-3 py-2 text-sm text-green-700">{loginMessage}</p>}
+              {registerMessage && <p className="rounded-xl bg-green-50 px-3 py-2 text-sm text-green-700">{registerMessage}</p>}
               {error && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
             </div>
           </section>

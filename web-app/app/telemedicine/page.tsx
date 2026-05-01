@@ -158,7 +158,7 @@ export default function TelemedicinePage() {
         {error && <p className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
 
         {room && (
-          <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+          <div className="mt-6 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-900">
             <p className="font-semibold">Room created</p>
             <p className="mt-1">Name: {room.name}</p>
             <p>SID: {room.sid}</p>
@@ -166,12 +166,12 @@ export default function TelemedicinePage() {
         )}
 
         {tokenResult && (
-          <div className="mt-4 rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-sm text-cyan-900">
+          <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
             <p className="font-semibold">Participant token generated</p>
             <p className="mt-1 break-all">WebSocket URL: {tokenResult.wsUrl}</p>
             <p className="mt-1 break-all">Token: {tokenResult.token}</p>
             <p className="mt-1">Expires in: {tokenResult.expiresInSeconds}s</p>
-            <p className="mt-2 text-xs text-cyan-700">
+            <p className="mt-2 text-xs text-blue-700">
               Tip: click <strong>Enter Room</strong> to open the LiveKit room with this token.
             </p>
           </div>
