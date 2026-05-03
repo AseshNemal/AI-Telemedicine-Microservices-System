@@ -64,9 +64,6 @@ func NewHandler(db *database.Client) *Handler {
 	notifBase := os.Getenv("NOTIFICATION_SERVICE_URL")
 	if notifBase == "" {
 		notifBase = "http://localhost:8084"
-	} else if strings.Contains(notifBase, "notification-service") {
-		// Local dev fallback: docker/k8s-style hostname is not resolvable on host shell.
-		notifBase = "http://localhost:8084"
 	}
 
 	telemediaBase := os.Getenv("TELEMEDICINE_SERVICE_URL")
