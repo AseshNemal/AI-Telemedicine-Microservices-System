@@ -64,21 +64,6 @@ cd web-app && npm run dev
 
 If backend services cannot call each other, it usually means one terminal started without loading `.env` first.
 
-## Recent fixes (2026-04-21)
-
-- Payment flow fixes:
-	- Normalized Stripe secret envs in `payment-service` (strips wrapping quotes) so API keys are accepted by Stripe.
-	- `appointment-service` now uses the in-cluster `PAYMENT_SERVICE_URL` (service DNS) instead of `localhost`.
-	- Added a same-origin verification proxy (`/api/payments/verify`) in the web app to avoid CORS and in-cluster gateway routing issues.
-- Firebase initialization:
-	- Fixed Firebase Admin initialization in `auth-service-node` and `patient-service-node` by normalizing quoted private-key and credential env values.
-- Telemedicine / LiveKit:
-	- Fixed Twirp URL parse errors by normalizing `LIVEKIT_URL` and LiveKit env values in `telemedicine-service`.
-	- `/telemedicine/rooms` and `/telemedicine/token` endpoints verified working (return valid room and token payloads).
-- Quick remediation notes:
-	- Ensure Kubernetes secrets do not include wrapping quotes (or rely on patched services that strip quotes).
-	- If frontend shows "Verification failed. Error: Failed to fetch", redeploy `web-app` with `API_GATEWAY_INTERNAL_URL` set and run `./k8s-up.sh --port-forward --port 8080`.
-
 ## 🚀 One-Command Run (Kubernetes)
 
 From the project root, run:
