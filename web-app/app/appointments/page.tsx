@@ -13,17 +13,17 @@ export default function AppointmentsPage() {
         </p>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <article className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+          <article className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">01</p>
             <h3 className="mt-1 text-sm font-semibold text-slate-900">Find clinician</h3>
             <p className="mt-1 text-xs text-slate-600">Search and select the doctor for your needs.</p>
           </article>
-          <article className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+          <article className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">02</p>
             <h3 className="mt-1 text-sm font-semibold text-slate-900">Pick slot</h3>
             <p className="mt-1 text-xs text-slate-600">Set your preferred date and time for consultation.</p>
           </article>
-          <article className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+          <article className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">03</p>
             <h3 className="mt-1 text-sm font-semibold text-slate-900">Get confirmed</h3>
             <p className="mt-1 text-xs text-slate-600">Manage and join your booked appointments.</p>

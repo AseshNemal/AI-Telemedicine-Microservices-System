@@ -7,6 +7,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NAMESPACE="default"
 SKIP_BUILD=false
+FORCE_BUILD=false
 SKIP_DEPLOY=false
 SKIP_WAIT=false
 SKIP_HEALTH=false
@@ -25,6 +26,7 @@ Usage: ./k8s-up.sh [options]
 
 Options:
   --skip-build         Skip Docker image build step
+  --force-build        Rebuild all Docker images even if a local image already exists
   --skip-deploy        Skip deploy step (secrets + kubectl apply)
   --skip-wait          Skip rollout wait step
   --skip-health        Skip gateway health checks
@@ -193,6 +195,7 @@ parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --skip-build) SKIP_BUILD=true ;;
+      --force-build) FORCE_BUILD=true ;;
       --skip-deploy) SKIP_DEPLOY=true ;;
       --skip-wait) SKIP_WAIT=true ;;
       --skip-health) SKIP_HEALTH=true ;;
@@ -250,6 +253,12 @@ build_images() {
   for item in "${builds[@]}"; do
     image="${item%%|*}"
     context="${item##*|}"
+
+    if [[ "$FORCE_BUILD" == false ]] && docker image inspect "$image" >/dev/null 2>&1; then
+      log_warn "- skipping ${image} (already exists locally; use --force-build to rebuild)"
+      continue
+    fi
+
     log_info "- docker build -t ${image} ${context}"
     docker build -t "$image" "$ROOT_DIR/$context"
   done

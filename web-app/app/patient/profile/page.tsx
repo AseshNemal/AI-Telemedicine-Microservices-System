@@ -207,7 +207,7 @@ export default function PatientProfilePage() {
     <main className="mx-auto min-h-[calc(100vh-220px)] w-full max-w-4xl px-4 py-8 md:px-8 md:py-12">
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm md:p-8">
         <div className="mb-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Patient profile</p>
+          <p className="section-kicker">Patient profile</p>
           <h1 className="mt-2 text-3xl font-bold text-slate-900">Complete your care profile</h1>
           <p className="mt-2 text-sm text-slate-600">
             Keep this profile updated to improve triage, prescriptions, and doctor matching.
@@ -241,7 +241,7 @@ export default function PatientProfilePage() {
               <input
                 value={form.phone}
                 onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))}
-                className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500"
+                className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
                 placeholder="+1 555 000 0000"
               />
             </label>
@@ -252,7 +252,7 @@ export default function PatientProfilePage() {
                 type="date"
                 value={form.dob}
                 onChange={(e) => setForm((prev) => ({ ...prev, dob: e.target.value }))}
-                className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500"
+                className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
               />
             </label>
 
@@ -266,7 +266,7 @@ export default function PatientProfilePage() {
                     gender: e.target.value as ProfileForm["gender"],
                   }))
                 }
-                className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500"
+                className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
               >
                 <option value="PREFER_NOT_TO_SAY">Prefer not to say</option>
                 <option value="MALE">Male</option>
@@ -285,7 +285,7 @@ export default function PatientProfilePage() {
                     bloodGroup: e.target.value as ProfileForm["bloodGroup"],
                   }))
                 }
-                className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500"
+                className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
               >
                 <option value="">Select</option>
                 <option value="A+">A+</option>
@@ -304,7 +304,7 @@ export default function PatientProfilePage() {
               <input
                 value={form.address}
                 onChange={(e) => setForm((prev) => ({ ...prev, address: e.target.value }))}
-                className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500"
+                className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
                 placeholder="Street, city, state"
               />
             </label>
@@ -314,7 +314,7 @@ export default function PatientProfilePage() {
               <input
                 value={form.allergies}
                 onChange={(e) => setForm((prev) => ({ ...prev, allergies: e.target.value }))}
-                className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500"
+                className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
                 placeholder="Penicillin, peanuts"
               />
             </label>
@@ -324,7 +324,7 @@ export default function PatientProfilePage() {
               <input
                 value={form.chronicConditions}
                 onChange={(e) => setForm((prev) => ({ ...prev, chronicConditions: e.target.value }))}
-                className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500"
+                className="mt-1 h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-blue-500"
                 placeholder="Diabetes, hypertension"
               />
             </label>
@@ -332,7 +332,7 @@ export default function PatientProfilePage() {
             <div className="md:col-span-2">
               <button
                 disabled={disabled}
-                className="h-11 rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn-primary h-11 px-5 disabled:cursor-not-allowed disabled:opacity-60"
                 type="submit"
               >
                 {saving ? "Saving..." : "Save profile"}
@@ -341,7 +341,7 @@ export default function PatientProfilePage() {
           </form>
         )}
 
-        {message && <p className="mt-4 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</p>}
+        {message && <p className="mt-4 rounded-xl bg-green-50 px-3 py-2 text-sm text-green-700">{message}</p>}
         {error && <p className="mt-4 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
       </div>
 
@@ -365,7 +365,7 @@ export default function PatientProfilePage() {
           <button
             type="submit"
             disabled={uploadingReport || !selectedReportFile}
-            className="h-10 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-60"
+            className="btn-primary h-10 px-4 disabled:opacity-60"
           >
             {uploadingReport ? "Uploading..." : "Upload report"}
           </button>

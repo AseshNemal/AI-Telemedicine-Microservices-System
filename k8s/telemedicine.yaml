@@ -23,8 +23,8 @@ spec:
               value: "8086"
             - name: LIVEKIT_URL
               valueFrom:
-                configMapKeyRef:
-                  name: telemedicine-config
+                secretKeyRef:
+                  name: telemedicine-secrets
                   key: LIVEKIT_URL
             - name: LIVEKIT_API_KEY
               valueFrom:

@@ -20,17 +20,17 @@ export default function MainNav() {
   const pathname = usePathname();
 
   return (
-    <div className="flex flex-wrap items-center gap-1 rounded-xl border border-slate-200 bg-white p-1 text-sm shadow-sm">
+    <div className="hidden items-center gap-7 text-sm font-medium md:flex">
       {navItems.map((item) => {
         const active = isActivePath(pathname, item.href);
         return (
           <Link
             key={item.href}
             href={item.href}
-            className={`rounded-lg px-3 py-1.5 transition ${
+            className={`transition ${
               active
-                ? 'bg-slate-900 text-white'
-                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                ? 'text-blue-600 font-semibold'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
           >
             {item.label}

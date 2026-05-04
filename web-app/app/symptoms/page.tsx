@@ -17,17 +17,17 @@ export default function SymptomsPage() {
         </p>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <article className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+          <article className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">01</p>
             <h3 className="mt-1 text-sm font-semibold text-slate-900">Describe symptoms</h3>
             <p className="mt-1 text-xs text-slate-600">Begin with your primary concern in plain language.</p>
           </article>
-          <article className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+          <article className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">02</p>
             <h3 className="mt-1 text-sm font-semibold text-slate-900">Answer follow-ups</h3>
             <p className="mt-1 text-xs text-slate-600">Get dynamic questions tailored to your responses.</p>
           </article>
-          <article className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+          <article className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">03</p>
             <h3 className="mt-1 text-sm font-semibold text-slate-900">Review care guidance</h3>
             <p className="mt-1 text-xs text-slate-600">Understand urgency and recommended next actions.</p>

@@ -25,3 +25,7 @@ web-app/.next/
 secret.yaml
 deployments/kubernetes/secret.yaml
 deployments/kubernetes/secret.yaml
+CLAUDE.md
+.claude/
+CLAUDE.md
+.claude/settings.local.json

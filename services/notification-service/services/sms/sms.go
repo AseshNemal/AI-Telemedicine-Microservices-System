@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -107,9 +108,10 @@ func (c *Client) SendSMS(to, message string) error {
 	}
 	defer resp.Body.Close()
 
+	b, _ := ioutil.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		b, _ := ioutil.ReadAll(resp.Body)
 		return fmt.Errorf("twilio error: status=%d body=%s", resp.StatusCode, string(b))
 	}
+	log.Printf("[sms] sent to=%s status=%d twilio_response=%s", normalizedTo, resp.StatusCode, string(b))
 	return nil
 }

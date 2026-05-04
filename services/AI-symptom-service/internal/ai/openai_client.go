@@ -109,6 +109,7 @@ If emergency=true set nextQuestion to null.`, string(payload))
 	completion, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
 		Model:       c.model,
 		Temperature: openai.Float(0.2),
+		MaxTokens:   openai.Int(320),
 		Messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(triageSystemPrompt),
 			openai.UserMessage(userPrompt),

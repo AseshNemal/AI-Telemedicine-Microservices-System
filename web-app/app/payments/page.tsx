@@ -13,17 +13,17 @@ export default function PaymentsPage() {
         </p>
 
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <article className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+          <article className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">01</p>
             <h3 className="mt-1 text-sm font-semibold text-slate-900">Confirm details</h3>
             <p className="mt-1 text-xs text-slate-600">Validate appointment and participant information.</p>
           </article>
-          <article className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+          <article className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">02</p>
             <h3 className="mt-1 text-sm font-semibold text-slate-900">Checkout securely</h3>
             <p className="mt-1 text-xs text-slate-600">Complete payment with encrypted processing.</p>
           </article>
-          <article className="rounded-2xl border border-slate-200 bg-white/90 p-4">
+          <article className="rounded-2xl border border-slate-200 bg-white p-4">
             <p className="text-xs uppercase tracking-[0.16em] text-slate-500">03</p>
             <h3 className="mt-1 text-sm font-semibold text-slate-900">Track status</h3>
             <p className="mt-1 text-xs text-slate-600">Keep a clear record of payment state and confirmation.</p>

@@ -41,9 +41,13 @@ load_env_file() {
         key="${key//[[:space:]]/}"
         # Keep everything after the first '=' as the value
         value="${value%$'\r'}"
-        if [[ "$value" =~ ^".*"$ ]]; then
+        # Strip inline comments (e.g. value="foo" # comment → foo)
+        value="${value%%#*}"
+        value="${value%"${value##*[! ]}"}"  # rtrim
+        # Strip surrounding shell quotes (single or double)
+        if [[ "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then
             value="${value:1:-1}"
-        elif [[ "$value" =~ ^'.*'$ ]]; then
+        elif [[ "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
             value="${value:1:-1}"
         fi
         export "$key"="$value"
@@ -251,17 +255,26 @@ secret_default() {
     esac
 }
 
-SECRET_ARGS=()
-for var in "${SECRET_VARS[@]}"; do
-    val="$(secret_default "$var")"
-    SECRET_ARGS+=("--from-literal=${var}=${val}")
-done
+SECRET_YAML="${SECRETS_DIR}/secret.yaml"
+USE_SECRET_YAML=false
+if [ -f "$SECRET_YAML" ]; then
+    echo -e "${YELLOW}Found ${SECRET_YAML} — applying it directly (skips .env quote issues)...${NC}"
+    kubectl apply -f "$SECRET_YAML" -n "$NAMESPACE"
+    echo -e "${GREEN}✓ Secret applied from ${SECRET_YAML}${NC}\n"
+    USE_SECRET_YAML=true
+else
+    SECRET_ARGS=()
+    for var in "${SECRET_VARS[@]}"; do
+        val="$(secret_default "$var")"
+        SECRET_ARGS+=("--from-literal=${var}=${val}")
+    done
 
-kubectl create secret generic telemedicine-secrets \
-    "${SECRET_ARGS[@]}" \
-    -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+    kubectl create secret generic telemedicine-secrets \
+        "${SECRET_ARGS[@]}" \
+        -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
-echo -e "${GREEN}✓ Secret created from .env${NC}\n"
+    echo -e "${GREEN}✓ Secret created from .env${NC}\n"
+fi
 
 # Deploy all manifests (deployments, services, statefulsets, configmaps, secrets)
 echo -e "${YELLOW}Deploying services...${NC}"
@@ -272,9 +285,13 @@ kubectl create configmap telemedicine-config \
     "${CONFIGMAP_ARGS[@]}" \
     -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl create secret generic telemedicine-secrets \
-    "${SECRET_ARGS[@]}" \
-    -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+if [ "$USE_SECRET_YAML" = true ]; then
+    kubectl apply -f "$SECRET_YAML" -n "$NAMESPACE"
+else
+    kubectl create secret generic telemedicine-secrets \
+        "${SECRET_ARGS[@]}" \
+        -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+fi
 
 echo -e "${GREEN}✓ All services deployed${NC}\n"
 
