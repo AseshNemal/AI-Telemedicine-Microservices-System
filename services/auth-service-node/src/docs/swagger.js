@@ -50,6 +50,28 @@ const options = {
                         },
                     },
                 },
+                UpdateRoleRequest: {
+                    type: 'object',
+                    required: ['role'],
+                    properties: {
+                        role: { type: 'string', enum: ['PATIENT', 'DOCTOR', 'ADMIN'] },
+                    },
+                },
+                UpdateStatusRequest: {
+                    type: 'object',
+                    required: ['isActive'],
+                    properties: {
+                        isActive: { type: 'boolean' },
+                    },
+                },
+                UpdateDoctorVerificationRequest: {
+                    type: 'object',
+                    required: ['status'],
+                    properties: {
+                        status: { type: 'string', enum: ['VERIFIED', 'REJECTED'] },
+                        notes: { type: 'string' },
+                    },
+                },
             },
         },
         paths: {
@@ -115,6 +137,142 @@ const options = {
                     responses: {
                         200: { description: 'Logout acknowledged' },
                         401: { description: 'Unauthorized' },
+                    },
+                },
+            },
+            '/api/auth/admin/users': {
+                get: {
+                    tags: ['Admin'],
+                    summary: 'List platform users with optional filters',
+                    security: [{ bearerAuth: [] }],
+                    parameters: [
+                        {
+                            in: 'query',
+                            name: 'role',
+                            schema: { type: 'string', enum: ['PATIENT', 'DOCTOR', 'ADMIN'] },
+                        },
+                        {
+                            in: 'query',
+                            name: 'isActive',
+                            schema: { type: 'boolean' },
+                        },
+                        {
+                            in: 'query',
+                            name: 'page',
+                            schema: { type: 'integer', minimum: 1 },
+                        },
+                        {
+                            in: 'query',
+                            name: 'limit',
+                            schema: { type: 'integer', minimum: 1, maximum: 100 },
+                        },
+                    ],
+                    responses: {
+                        200: { description: 'Users returned' },
+                        401: { description: 'Unauthorized' },
+                        403: { description: 'Forbidden' },
+                    },
+                },
+            },
+            '/api/auth/admin/users/{uid}/role': {
+                patch: {
+                    tags: ['Admin'],
+                    summary: 'Update user role claim and mirror record',
+                    security: [{ bearerAuth: [] }],
+                    parameters: [
+                        {
+                            in: 'path',
+                            name: 'uid',
+                            required: true,
+                            schema: { type: 'string' },
+                        },
+                    ],
+                    requestBody: {
+                        required: true,
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/UpdateRoleRequest' },
+                            },
+                        },
+                    },
+                    responses: {
+                        200: { description: 'Role updated' },
+                        400: { description: 'Validation failed' },
+                        401: { description: 'Unauthorized' },
+                        403: { description: 'Forbidden' },
+                        404: { description: 'User not found' },
+                    },
+                },
+            },
+            '/api/auth/admin/users/{uid}/status': {
+                patch: {
+                    tags: ['Admin'],
+                    summary: 'Activate or deactivate user account',
+                    security: [{ bearerAuth: [] }],
+                    parameters: [
+                        {
+                            in: 'path',
+                            name: 'uid',
+                            required: true,
+                            schema: { type: 'string' },
+                        },
+                    ],
+                    requestBody: {
+                        required: true,
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/UpdateStatusRequest' },
+                            },
+                        },
+                    },
+                    responses: {
+                        200: { description: 'Status updated' },
+                        400: { description: 'Validation failed' },
+                        401: { description: 'Unauthorized' },
+                        403: { description: 'Forbidden' },
+                        404: { description: 'User not found' },
+                    },
+                },
+            },
+            '/api/auth/admin/doctors/pending': {
+                get: {
+                    tags: ['Admin'],
+                    summary: 'List pending doctor registrations for verification',
+                    security: [{ bearerAuth: [] }],
+                    responses: {
+                        200: { description: 'Pending doctors returned' },
+                        401: { description: 'Unauthorized' },
+                        403: { description: 'Forbidden' },
+                    },
+                },
+            },
+            '/api/auth/admin/doctors/{uid}/verification': {
+                patch: {
+                    tags: ['Admin'],
+                    summary: 'Verify or reject a doctor registration',
+                    security: [{ bearerAuth: [] }],
+                    parameters: [
+                        {
+                            in: 'path',
+                            name: 'uid',
+                            required: true,
+                            schema: { type: 'string' },
+                        },
+                    ],
+                    requestBody: {
+                        required: true,
+                        content: {
+                            'application/json': {
+                                schema: { $ref: '#/components/schemas/UpdateDoctorVerificationRequest' },
+                            },
+                        },
+                    },
+                    responses: {
+                        200: { description: 'Doctor verification updated' },
+                        400: { description: 'Validation failed' },
+                        401: { description: 'Unauthorized' },
+                        403: { description: 'Forbidden' },
+                        404: { description: 'Doctor not found' },
                     },
                 },
             },

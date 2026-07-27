@@ -54,6 +54,29 @@ const userSchema = new mongoose.Schema(
             default: false,
         },
 
+        // Admin workflow status for doctor account approval
+        doctorVerificationStatus: {
+            type: String,
+            enum: ['NOT_REQUIRED', 'PENDING', 'VERIFIED', 'REJECTED'],
+            default: 'NOT_REQUIRED',
+        },
+
+        doctorVerificationNotes: {
+            type: String,
+            trim: true,
+            default: '',
+        },
+
+        doctorVerifiedBy: {
+            type: String,
+            default: null,
+        },
+
+        doctorVerifiedAt: {
+            type: Date,
+            default: null,
+        },
+
         // Last time Auth service successfully synced Firebase user metadata
         lastSyncedAt: {
             type: Date,

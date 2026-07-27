@@ -29,6 +29,21 @@ const createFirebaseUserWithRole = async ({ fullName, email, password, phone, ro
     };
 };
 
+const setFirebaseUserRoleClaim = async (uid, role) => {
+    initFirebaseAdmin();
+
+    const normalizedRole = normalizeRole(role);
+    await admin.auth().setCustomUserClaims(uid, { role: normalizedRole });
+    return normalizedRole;
+};
+
+const setFirebaseUserDisabledStatus = async (uid, isDisabled) => {
+    initFirebaseAdmin();
+    await admin.auth().updateUser(uid, { disabled: Boolean(isDisabled) });
+};
+
 module.exports = {
     createFirebaseUserWithRole,
+    setFirebaseUserRoleClaim,
+    setFirebaseUserDisabledStatus,
 };
